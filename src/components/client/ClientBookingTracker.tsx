@@ -36,11 +36,13 @@ import {
   X,
   Ticket,
   AlertTriangle,
-  Tag
+  Tag,
+  Loader2
 } from 'lucide-react';
 import { dispatchAppNotification } from '../../utils/notifications';
 import { UserProfile } from '../../utils/supabaseClient';
 import { SupportedCurrency, getStoredCurrency, formatCurrency } from '../../utils/currency';
+import { getRandomDelay } from '../../utils/delay';
 
 interface ClientBookingTrackerProps {
   bookings: Booking[];
@@ -61,6 +63,7 @@ export const ClientBookingTracker: React.FC<ClientBookingTrackerProps> = ({
 }) => {
   const safeInitialRef = typeof initialSelectedRef === 'string' && initialSelectedRef.trim() ? initialSelectedRef.trim() : undefined;
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [copiedRef, setCopiedRef] = useState(false);
   const [copiedViber, setCopiedViber] = useState(false);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
@@ -102,6 +105,20 @@ export const ClientBookingTracker: React.FC<ClientBookingTrackerProps> = ({
       // ignore
     }
   }, [safeInitialRef, bookings]);
+
+  // Simulated search loading when query is changed
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    const delay = getRandomDelay(400, 750);
+    const t = setTimeout(() => {
+      setIsSearching(false);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   // Filter bookings securely according to user account privacy:
   // - Logged in user: ONLY see bookings matching their email OR created on their session (myBookingRefs/safeInitialRef)

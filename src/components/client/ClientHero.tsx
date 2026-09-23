@@ -11,9 +11,11 @@ import {
   Search, 
   ExternalLink,
   Sparkles,
-  Check
+  Check,
+  Loader2
 } from 'lucide-react';
 import { TourPackage, SearchJourneyCriteria } from '../../types';
+import { getRandomDelay } from '../../utils/delay';
 
 interface ClientHeroProps {
   onExploreClick: () => void;
@@ -117,6 +119,7 @@ export const ClientHero: React.FC<ClientHeroProps> = ({
   });
   const [travelersCount, setTravelersCount] = useState(2);
   const [isDestinationDropdownOpen, setIsDestinationDropdownOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   const touchStartX = useRef<number | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -182,32 +185,39 @@ export const ClientHero: React.FC<ClientHeroProps> = ({
 
   // Quick search action: copy destination, departure dates, and travelers to booking modal
   const handleQuickSearch = () => {
-    // If a destination was selected, look for a matching tour package
-    const destToUse = selectedDestination || currentSlide.destination;
-    let matchedPkg: TourPackage | undefined;
-    
-    if (destToUse && destToUse !== 'All Destinations (Worldwide & Islands)') {
-      const destClean = destToUse.toLowerCase().split('(')[0].replace(/,/g, ' ').trim();
-      const keywords = destClean.split(' ').filter(w => w.length > 2);
+    if (isSearching) return;
+    setIsSearching(true);
+    const delay = getRandomDelay(450, 850);
+
+    setTimeout(() => {
+      // If a destination was selected, look for a matching tour package
+      const destToUse = selectedDestination || currentSlide.destination;
+      let matchedPkg: TourPackage | undefined;
       
-      matchedPkg = packages.find(p => {
-        const pDest = p.destination.toLowerCase();
-        const pTitle = p.title.toLowerCase();
-        return (
-          keywords.some(k => pDest.includes(k) || pTitle.includes(k)) ||
-          pDest.includes(destClean) ||
-          destClean.includes(pDest)
-        );
-      });
-    }
+      if (destToUse && destToUse !== 'All Destinations (Worldwide & Islands)') {
+        const destClean = destToUse.toLowerCase().split('(')[0].replace(/,/g, ' ').trim();
+        const keywords = destClean.split(' ').filter(w => w.length > 2);
+        
+        matchedPkg = packages.find(p => {
+          const pDest = p.destination.toLowerCase();
+          const pTitle = p.title.toLowerCase();
+          return (
+            keywords.some(k => pDest.includes(k) || pTitle.includes(k)) ||
+            pDest.includes(destClean) ||
+            destClean.includes(pDest)
+          );
+        });
+      }
 
-    const searchCriteria: SearchJourneyCriteria = {
-      destination: destToUse || undefined,
-      departureDate: departureDate || undefined,
-      travelersCount: travelersCount || 2,
-    };
+      const searchCriteria: SearchJourneyCriteria = {
+        destination: destToUse || undefined,
+        departureDate: departureDate || undefined,
+        travelersCount: travelersCount || 2,
+      };
 
-    onBookClick(matchedPkg, searchCriteria);
+      setIsSearching(false);
+      onBookClick(matchedPkg, searchCriteria);
+    }, delay);
   };
 
   // Jump to specific package for the active slide
@@ -448,12 +458,22 @@ export const ClientHero: React.FC<ClientHeroProps> = ({
             <div className="p-1 shrink-0">
               <button
                 type="button"
+                disabled={isSearching}
                 onClick={handleQuickSearch}
-                className="w-full md:w-auto inline-flex items-center justify-center gap-2.5 bg-gradient-to-r from-sunset-coral via-[#ff6f50] to-[#ff856b] hover:from-[#ff6f50] hover:to-sunset-coral text-white px-6 py-3.5 rounded-xl md:rounded-full text-xs font-bold tracking-[0.14em] uppercase shadow-xl shadow-sunset-coral/40 hover:shadow-sunset-coral/70 hover:scale-105 active:scale-95 transition-all duration-300 border border-white/30 cursor-pointer group"
+                className="w-full md:w-auto inline-flex items-center justify-center gap-2.5 bg-gradient-to-r from-sunset-coral via-[#ff6f50] to-[#ff856b] hover:from-[#ff6f50] hover:to-sunset-coral text-white px-6 py-3.5 rounded-xl md:rounded-full text-xs font-bold tracking-[0.14em] uppercase shadow-xl shadow-sunset-coral/40 hover:shadow-sunset-coral/70 hover:scale-105 active:scale-95 transition-all duration-300 border border-white/30 cursor-pointer group disabled:opacity-75"
                 id="hero-capsule-search-btn"
               >
-                <Search className="w-4 h-4 group-hover:rotate-12 transition-transform duration-300" />
-                <span>Search Journeys</span>
+                {isSearching ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Locating Flights...</span>
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-4 h-4 group-hover:rotate-12 transition-transform duration-300" />
+                    <span>Search Journeys</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -462,12 +482,22 @@ export const ClientHero: React.FC<ClientHeroProps> = ({
         {/* 4. Action CTAs with Interactive Hover Zoom-in & Vibrant Color */}
         <div className="flex flex-wrap items-center gap-3 sm:gap-4 relative z-10">
           <button
+            disabled={isSearching}
             onClick={() => handleQuickSearch()}
-            className="group relative inline-flex items-center justify-center gap-3 bg-sunset-coral hover:bg-[#ff765b] text-white px-7 sm:px-8 py-3.5 sm:py-4 rounded-full text-xs font-semibold tracking-[0.18em] uppercase shadow-2xl shadow-sunset-coral/30 hover:shadow-sunset-coral/60 hover:scale-105 active:scale-95 transition-all duration-300 border border-white/25 cursor-pointer"
+            className="group relative inline-flex items-center justify-center gap-3 bg-sunset-coral hover:bg-[#ff765b] text-white px-7 sm:px-8 py-3.5 sm:py-4 rounded-full text-xs font-semibold tracking-[0.18em] uppercase shadow-2xl shadow-sunset-coral/30 hover:shadow-sunset-coral/60 hover:scale-105 active:scale-95 transition-all duration-300 border border-white/25 cursor-pointer disabled:opacity-75"
             id="hero-begin-booking-btn"
           >
-            <span>Book an Expedition</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+            {isSearching ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                <span>Preparing Itinerary...</span>
+              </>
+            ) : (
+              <>
+                <span>Book an Expedition</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              </>
+            )}
           </button>
 
           <button

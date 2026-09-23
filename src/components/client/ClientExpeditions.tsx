@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SupportedCurrency, getStoredCurrency, formatCurrency } from '../../utils/currency';
+import { getRandomDelay } from '../../utils/delay';
 
 interface ClientExpeditionsProps {
   packages: TourPackage[];
@@ -30,6 +31,7 @@ export const ClientExpeditions: React.FC<ClientExpeditionsProps> = ({
   onSelectPackage,
 }) => {
   const [selectedFilter, setSelectedFilter] = useState<string>('All');
+  const [isFilterLoading, setIsFilterLoading] = useState<boolean>(false);
   const [modalPackage, setModalPackage] = useState<TourPackage | null>(null);
   const [activeCurrency, setActiveCurrency] = useState<SupportedCurrency>(getStoredCurrency());
 
@@ -41,6 +43,16 @@ export const ClientExpeditions: React.FC<ClientExpeditionsProps> = ({
     window.addEventListener('holiday_currency_changed', handleCurrencyChange);
     return () => window.removeEventListener('holiday_currency_changed', handleCurrencyChange);
   }, []);
+
+  const handleFilterSelect = (cat: string) => {
+    if (cat === selectedFilter) return;
+    setIsFilterLoading(true);
+    setSelectedFilter(cat);
+    const delay = getRandomDelay(400, 750);
+    setTimeout(() => {
+      setIsFilterLoading(false);
+    }, delay);
+  };
 
   const activePackages = packages.filter((p) => p.status === 'Active');
 
@@ -98,7 +110,7 @@ export const ClientExpeditions: React.FC<ClientExpeditionsProps> = ({
             {categories.map((cat) => (
               <button
                 key={cat}
-                onClick={() => setSelectedFilter(cat)}
+                onClick={() => handleFilterSelect(cat)}
                 className={`px-4 py-2 rounded-full text-xs font-sans-body tracking-wider transition-all duration-300 ${
                   selectedFilter === cat
                     ? 'bg-sunset-coral text-white font-medium shadow-lg shadow-sunset-coral/30 scale-105'
@@ -112,6 +124,21 @@ export const ClientExpeditions: React.FC<ClientExpeditionsProps> = ({
         </div>
 
         {/* 2-Column Responsive Premium Journey Grid */}
+        {isFilterLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-10 animate-pulse">
+            {[1, 2, 3, 4].map((n) => (
+              <div key={n} className="rounded-3xl border border-white/5 bg-white/[0.02] h-96 flex flex-col justify-end p-8 space-y-4">
+                <div className="w-24 h-4 bg-white/10 rounded-full" />
+                <div className="w-3/4 h-8 bg-white/10 rounded-xl" />
+                <div className="w-1/2 h-4 bg-white/10 rounded-full" />
+                <div className="pt-4 flex justify-between items-center border-t border-white/5">
+                  <div className="w-28 h-6 bg-white/10 rounded-lg" />
+                  <div className="w-24 h-8 bg-sunset-coral/20 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
         <motion.div 
           layout
           className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-10"
