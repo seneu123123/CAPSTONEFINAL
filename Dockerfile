@@ -10,9 +10,9 @@ RUN npm install --legacy-peer-deps
 # Copy application source files
 COPY . .
 
-# Optional Build Arguments for Vite Frontend Environment
-ARG VITE_SUPABASE_URL=https://xlwpddwdlcfrokqsfvaa.supabase.co
-ARG VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhsd3BkZHdkbGNmcm9rcXNmdmFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3NDU4MDQsImV4cCI6MjEwNTMyMTgwNH0.Vvw9MOcXllbBQbQvhV33tHfYmS8-gLe9PbQJ7Nh7fjA
+# Build arguments passed from HostForge or environment
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
 
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
