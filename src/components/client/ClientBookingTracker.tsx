@@ -43,6 +43,7 @@ import { dispatchAppNotification } from '../../utils/notifications';
 import { UserProfile } from '../../utils/supabaseClient';
 import { SupportedCurrency, getStoredCurrency, formatCurrency } from '../../utils/currency';
 import { getRandomDelay } from '../../utils/delay';
+import { SettleBalanceModal } from './SettleBalanceModal';
 
 interface ClientBookingTrackerProps {
   bookings: Booking[];
@@ -71,6 +72,8 @@ export const ClientBookingTracker: React.FC<ClientBookingTrackerProps> = ({
   const [reuploadImage, setReuploadImage] = useState<string>('');
   const [isUploading, setIsUploading] = useState(false);
   const [activeCurrency, setActiveCurrency] = useState<SupportedCurrency>(getStoredCurrency());
+  const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
+  const [settleBookingTarget, setSettleBookingTarget] = useState<Booking | null>(null);
 
   useEffect(() => {
     const handleCurrencyChange = (e: Event) => {
@@ -377,7 +380,11 @@ Phone: 0916 525 3517 | Email: holidaytravelersinc2022@gmail.com`;
               {activeUnpaidBookings.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setSelectedBooking(activeUnpaidBookings[0])}
+                  onClick={() => {
+                    setSelectedBooking(activeUnpaidBookings[0]);
+                    setSettleBookingTarget(activeUnpaidBookings[0]);
+                    setIsSettleModalOpen(true);
+                  }}
                   className="px-4 py-2 rounded-xl bg-sunset-coral hover:bg-[#ff765b] text-white font-semibold text-xs shadow-lg shadow-sunset-coral/30 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
                 >
                   <CreditCard className="w-3.5 h-3.5" />
@@ -639,6 +646,21 @@ Phone: 0916 525 3517 | Email: holidaytravelersinc2022@gmail.com`;
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* Settle Balance Button if has outstanding balance */}
+                    {(selectedBooking.invoice?.balanceDue > 0 || selectedBooking.paymentStatus === 'Unpaid') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSettleBookingTarget(selectedBooking);
+                          setIsSettleModalOpen(true);
+                        }}
+                        className="btn-pop px-3.5 py-2 rounded-xl bg-sunset-coral hover:bg-[#ff765b] active:scale-95 text-xs text-white font-semibold flex items-center gap-1.5 shadow-md shadow-sunset-coral/25 transition-all cursor-pointer font-sans-body"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span>Settle Balance ({formatCurrency(selectedBooking.invoice.balanceDue, activeCurrency)})</span>
+                      </button>
+                    )}
+
                     {/* Copy Viber / Messenger Snippet */}
                     <button
                       type="button"
@@ -674,6 +696,40 @@ Phone: 0916 525 3517 | Email: holidaytravelersinc2022@gmail.com`;
 
                 {/* Anti-Scam & Verification Status Banner */}
                 {(() => {
+                  // Check if booking is an unpaid or 24-hour price hold reservation
+                  const is24HrHoldOrUnpaid = 
+                    (selectedBooking.invoice?.amountPaid || 0) === 0 || 
+                    selectedBooking.paymentStatus === 'Unpaid' || 
+                    selectedBooking.invoice?.payments?.[0]?.referenceNo?.startsWith('HOLD-') ||
+                    selectedBooking.invoice?.payments?.[0]?.notes?.includes('24-Hour');
+
+                  if (is24HrHoldOrUnpaid) {
+                    return (
+                      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 font-semibold text-xs font-sans-body">
+                            <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                            <span>24-Hour Price Lock Active • Unpaid Reservation</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSettleBookingTarget(selectedBooking);
+                              setIsSettleModalOpen(true);
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-sunset-coral hover:bg-[#ff765b] text-white text-xs font-semibold shadow-md active:scale-95 transition-all cursor-pointer font-sans-body flex items-center gap-1.5 self-start sm:self-auto"
+                          >
+                            <CreditCard className="w-3.5 h-3.5" />
+                            <span>Settle Balance Now</span>
+                          </button>
+                        </div>
+                        <p className="text-xs text-sand-muted leading-relaxed font-sans-body">
+                          Your package rate and tour slots are currently reserved for 24 hours. Please settle your reservation deposit or remaining balance using GCash, Maya, or Bank Transfer to clear your digital tour voucher.
+                        </p>
+                      </div>
+                    );
+                  }
+
                   const pmtStatus = selectedBooking.paymentVerificationStatus || selectedBooking.invoice.payments[0]?.status || 'Pending Verification';
 
                   if (pmtStatus === 'Verified') {
@@ -764,7 +820,7 @@ Phone: 0916 525 3517 | Email: holidaytravelersinc2022@gmail.com`;
                     <span className="text-xs text-sand-muted font-mono">{selectedBooking.destination}</span>
                   </div>
                   <h3 className="text-lg font-bold text-ivory max-w-[80%]">{selectedBooking.tourTitle}</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1 border-t border-white/5">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs pt-1 border-t border-white/5">
                     <div>
                       <span className="text-sand-muted text-[10px] block">Departure Date:</span>
                       <span className="text-ivory font-mono font-medium">{selectedBooking.travelDate}</span>
@@ -776,10 +832,41 @@ Phone: 0916 525 3517 | Email: holidaytravelersinc2022@gmail.com`;
                     <div>
                       <span className="text-sand-muted text-[10px] block">Amount Settled:</span>
                       <span className="text-emerald-400 font-mono font-bold">
-                        ₱{selectedBooking.invoice.amountPaid.toLocaleString()}
+                        {formatCurrency(selectedBooking.invoice.amountPaid, activeCurrency)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-sand-muted text-[10px] block">Balance Due:</span>
+                      <span className={`font-mono font-bold ${selectedBooking.invoice.balanceDue > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {formatCurrency(selectedBooking.invoice.balanceDue, activeCurrency)}
                       </span>
                     </div>
                   </div>
+
+                  {selectedBooking.invoice.balanceDue > 0 && (
+                    <div className="mt-2 pt-2 border-t border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-xl bg-sunset-coral/10 border border-sunset-coral/20">
+                      <div>
+                        <div className="text-xs font-bold text-ivory flex items-center gap-1.5 font-sans-body">
+                          <CreditCard className="w-3.5 h-3.5 text-sunset-coral" />
+                          <span>Pending Balance: {formatCurrency(selectedBooking.invoice.balanceDue, activeCurrency)}</span>
+                        </div>
+                        <p className="text-[11px] text-sand-muted mt-0.5">
+                          Settle your balance prior to departure via GCash, Maya, or Bank Transfer.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSettleBookingTarget(selectedBooking);
+                          setIsSettleModalOpen(true);
+                        }}
+                        className="btn-pop px-4 py-2 rounded-xl bg-sunset-coral hover:bg-[#ff765b] text-white text-xs font-semibold shadow-md active:scale-95 transition-all cursor-pointer shrink-0 font-sans-body flex items-center gap-1.5"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span>Settle Balance Now</span>
+                      </button>
+                    </div>
+                  )}
 
                   {selectedBooking.appliedPromoCode && (
                     <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 font-mono">
@@ -787,7 +874,7 @@ Phone: 0916 525 3517 | Email: holidaytravelersinc2022@gmail.com`;
                         <Tag className="w-3.5 h-3.5" />
                         <span>Promo Code Applied: <strong>{selectedBooking.appliedPromoCode}</strong></span>
                       </span>
-                      <span>Discount: -₱{(selectedBooking.discountAmount || 0).toLocaleString()}</span>
+                      <span>Discount: -{formatCurrency(selectedBooking.discountAmount || 0, activeCurrency)}</span>
                     </div>
                   )}
                 </div>
@@ -820,7 +907,7 @@ Phone: 0916 525 3517 | Email: holidaytravelersinc2022@gmail.com`;
                         ]
                     ).map((p, idx) => (
                       <div
-                        key={p.id || idx}
+                        key={`tracker-pax-${selectedBooking.id}-${p.id || idx}`}
                         className="p-3 bg-[#0B1015] rounded-xl border border-white/5 flex items-center justify-between text-xs"
                       >
                         <div className="flex items-center gap-3">
@@ -1121,6 +1208,32 @@ Phone: 0916 525 3517 | Email: holidaytravelersinc2022@gmail.com`;
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}
       />
+
+      {/* Settle Balance Modal */}
+      {isSettleModalOpen && settleBookingTarget && (
+        <SettleBalanceModal
+          isOpen={isSettleModalOpen}
+          booking={settleBookingTarget}
+          onClose={() => {
+            setIsSettleModalOpen(false);
+            setSettleBookingTarget(null);
+          }}
+          onPaymentSuccess={(updatedBooking) => {
+            if (selectedBooking?.id === updatedBooking.id) {
+              setSelectedBooking(updatedBooking);
+            }
+            if (onUpdateBooking) {
+              onUpdateBooking(updatedBooking);
+            }
+            dispatchAppNotification({
+              title: `Payment Logged • ${updatedBooking.bookingRef}`,
+              message: `Your balance payment proof was submitted for audit.`,
+              type: 'receipt',
+              bookingRef: updatedBooking.bookingRef
+            });
+          }}
+        />
+      )}
     </div>
   );
 };

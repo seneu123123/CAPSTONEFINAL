@@ -474,7 +474,7 @@ export const InPersonReceiptModal: React.FC<InPersonReceiptModalProps> = ({
                 <tbody className="divide-y divide-white/5 print:divide-slate-200">
                   {booking.passengers && booking.passengers.length > 0 ? (
                     booking.passengers.map((p, idx) => (
-                      <tr key={p.id || idx}>
+                      <tr key={`receipt-pax-${booking.id}-${p.id || idx}`}>
                         <td className="p-2.5 font-mono text-sand-muted print:text-slate-500">{idx + 1}</td>
                         <td className="p-2.5 font-medium text-ivory print:text-black">
                           <div>{p.fullName}</div>

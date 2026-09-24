@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Booking, 
   Customer, 
@@ -9,6 +9,7 @@ import {
   PaymentInvoice,
   SearchJourneyCriteria
 } from '../../types';
+import { SupportedCurrency, getStoredCurrency, formatCurrency } from '../../utils/currency';
 import { ImageWithLoader } from '../common/ImageWithLoader';
 import { BookingDetailDrawer } from './BookingDetailDrawer';
 import { ComprehensivePassengerManifest } from './ComprehensivePassengerManifest';
@@ -419,6 +420,18 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
     isOperatorView ? 'comprehensive_manifest' : 'new_booking'
   );
 
+  // Global Currency State synced with app-wide settings
+  const [activeCurrency, setActiveCurrency] = useState<SupportedCurrency>(getStoredCurrency());
+
+  useEffect(() => {
+    const handleCurrencyChange = (e: Event) => {
+      const custom = e as CustomEvent<SupportedCurrency>;
+      if (custom.detail) setActiveCurrency(custom.detail);
+    };
+    window.addEventListener('holiday_currency_changed', handleCurrencyChange);
+    return () => window.removeEventListener('holiday_currency_changed', handleCurrencyChange);
+  }, []);
+
   // Modals
   const [selectedBookingForDrawer, setSelectedBookingForDrawer] = useState<Booking | null>(null);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
@@ -665,8 +678,8 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
 
   // Passengers State (Starts completely empty for passengers to fill in)
   const [passengers, setPassengers] = useState<Passenger[]>([
-    { id: 'p1', fullName: '', age: '' as any, gender: '', passportOrId: '', specialRequirements: '', nationality: 'Filipino', boardingStatus: 'pending' },
-    { id: 'p2', fullName: '', age: '' as any, gender: '', passportOrId: '', specialRequirements: '', nationality: 'Filipino', boardingStatus: 'pending' }
+    { id: 'pax-init-1', fullName: '', age: '' as any, gender: '', passportOrId: '', specialRequirements: '', nationality: 'Filipino', boardingStatus: 'pending' },
+    { id: 'pax-init-2', fullName: '', age: '' as any, gender: '', passportOrId: '', specialRequirements: '', nationality: 'Filipino', boardingStatus: 'pending' }
   ]);
 
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -802,7 +815,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
           updated.push(prev[i]);
         } else {
           updated.push({
-            id: `p-${Date.now()}-${i + 1}`,
+            id: `pax-${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${i + 1}`,
             fullName: '',
             age: '' as any,
             gender: '',
@@ -1354,8 +1367,8 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
       nationality: 'Filipino'
     });
     setPassengers([
-      { id: 'p1', fullName: '', age: 28, gender: 'Female', passportOrId: '', specialRequirements: '', nationality: 'Filipino', boardingStatus: 'pending' },
-      { id: 'p2', fullName: '', age: 30, gender: 'Male', passportOrId: '', specialRequirements: '', nationality: 'Filipino', boardingStatus: 'pending' }
+      { id: `pax-rst-${Date.now()}-1`, fullName: '', age: 28, gender: 'Female', passportOrId: '', specialRequirements: '', nationality: 'Filipino', boardingStatus: 'pending' },
+      { id: `pax-rst-${Date.now()}-2`, fullName: '', age: 30, gender: 'Male', passportOrId: '', specialRequirements: '', nationality: 'Filipino', boardingStatus: 'pending' }
     ]);
     setConsentTermsAccepted(false);
     onClearPreSelectedPackage?.();
@@ -1620,9 +1633,9 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
 
                           {/* Billing */}
                           <td className="py-4 px-4 font-mono">
-                            <div className="font-serif-display text-sm text-ivory">₱{b.totalPrice.toLocaleString()}</div>
+                            <div className="font-serif-display text-sm text-ivory">{formatCurrency(b.totalPrice, activeCurrency)}</div>
                             <div className="text-[10px] text-emerald-400">
-                              Paid: ₱{b.invoice.amountPaid.toLocaleString()}
+                              Paid: {formatCurrency(b.invoice.amountPaid, activeCurrency)}
                             </div>
                           </td>
 
@@ -1700,7 +1713,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                                     const boarding = pax.boardingStatus || 'boarded';
                                     return (
                                       <div
-                                        key={pax.id || idx}
+                                        key={`op-pax-${b.id}-${pax.id || idx}`}
                                         className="bg-[#0B1017] p-3.5 rounded-xl border border-white/10 hover:border-white/20 transition-all space-y-2.5"
                                       >
                                         <div className="flex items-start justify-between gap-2">
@@ -1929,7 +1942,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                               {pkg.category}
                             </span>
                             <span className="text-xs font-bold text-ivory font-mono">
-                              ₱{pkg.pricePerPax.toLocaleString()} / pax
+                              {formatCurrency(pkg.pricePerPax, activeCurrency)} / pax
                             </span>
                           </div>
                           <h4 className="font-serif-display text-base text-ivory line-clamp-1">{pkg.title}</h4>
@@ -1977,7 +1990,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 pt-3 text-xs font-mono text-sand-muted border-t border-white/10">
-                    <span>Base Tier: <strong className="text-ivory font-bold">₱{selectedPackage.pricePerPax.toLocaleString()}</strong> / pax</span>
+                    <span>Base Tier: <strong className="text-ivory font-bold">{formatCurrency(selectedPackage.pricePerPax, activeCurrency)}</strong> / pax</span>
                     <span>•</span>
                     <span className="text-sand-muted">Accredited DOT Guide Included</span>
                     <span>•</span>
@@ -2091,7 +2104,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                           <p className="text-[11px] text-sand-muted mt-0.5">Air-conditioned resort room with daily breakfast and island transfers.</p>
                         </div>
                       </div>
-                      <span className="font-mono text-xs font-bold text-amber-300 shrink-0">₱{rawBaseRate.toLocaleString()} / pax</span>
+                      <span className="font-mono text-xs font-bold text-amber-300 shrink-0">{formatCurrency(rawBaseRate, activeCurrency)} / pax</span>
                     </motion.div>
 
                     {/* Mid-range / Deluxe */}
@@ -2117,7 +2130,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                           <p className="text-[11px] text-sand-muted mt-0.5">Private sea view balcony, welcome mocktails, and priority sunset cruise seating.</p>
                         </div>
                       </div>
-                      <span className="font-mono text-xs font-bold text-emerald-400 shrink-0">₱{(rawBaseRate + 1500).toLocaleString()} / pax</span>
+                      <span className="font-mono text-xs font-bold text-emerald-400 shrink-0">{formatCurrency(rawBaseRate + 1500, activeCurrency)} / pax</span>
                     </motion.div>
 
                     {/* Luxury / Villa */}
@@ -2143,7 +2156,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                           <p className="text-[11px] text-sand-muted mt-0.5">Infinity plunge pool, personal concierge, spa session, and candlelit seafood dinner.</p>
                         </div>
                       </div>
-                      <span className="font-mono text-xs font-bold text-purple-400 shrink-0">₱{(rawBaseRate + 3500).toLocaleString()} / pax</span>
+                      <span className="font-mono text-xs font-bold text-purple-400 shrink-0">{formatCurrency(rawBaseRate + 3500, activeCurrency)} / pax</span>
                     </motion.div>
                   </div>
                 </div>
@@ -2165,7 +2178,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                   </div>
                   <div>
                     <span className="text-[10px] font-mono text-sand-muted uppercase tracking-wider block">Estimated Base</span>
-                    <span className="font-serif-display text-lg text-ivory font-bold">₱{baseRate.toLocaleString()} <span className="text-xs font-sans-body font-normal text-sand-muted">/ person</span></span>
+                    <span className="font-serif-display text-lg text-ivory font-bold">{formatCurrency(baseRate, activeCurrency)} <span className="text-xs font-sans-body font-normal text-sand-muted">/ person</span></span>
                   </div>
                 </div>
 
@@ -2573,7 +2586,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                 <div className="space-y-4">
                   {passengers.map((p, index) => (
                     <motion.div
-                      key={p.id || index}
+                      key={p.id ? `booking-pax-${p.id}` : `booking-pax-idx-${index}`}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95 }}
@@ -2998,7 +3011,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                         {isPriceHoldOption && <Check className="w-4 h-4 text-amber-400" />}
                       </div>
                       <div className="font-serif-display text-xl text-ivory font-bold pt-1">
-                        ₱0 <span className="text-xs text-sand-muted font-normal">due right now</span>
+                        {formatCurrency(0, activeCurrency)} <span className="text-xs text-sand-muted font-normal">due right now</span>
                       </div>
                     </div>
                     <p className="text-[11px] text-sand-muted leading-tight">
@@ -3028,11 +3041,11 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                         {!isPriceHoldOption && paymentOption === 'deposit' && <Check className="w-4 h-4 text-sunset-coral" />}
                       </div>
                       <div className="font-serif-display text-xl text-ivory font-bold pt-1">
-                        ₱{depositAmount.toLocaleString()}
+                        {formatCurrency(depositAmount, activeCurrency)}
                       </div>
                     </div>
                     <p className="text-[11px] text-sand-muted leading-tight">
-                      Guarantees slots and instant hotel reservation. Balance of ₱{balanceDue.toLocaleString()} upon arrival.
+                      Guarantees slots and instant hotel reservation. Balance of {formatCurrency(balanceDue, activeCurrency)} upon arrival.
                     </p>
                   </motion.div>
 
@@ -3058,7 +3071,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                         {!isPriceHoldOption && paymentOption === 'full' && <Check className="w-4 h-4 text-sunset-coral" />}
                       </div>
                       <div className="font-serif-display text-xl text-ivory font-bold pt-1">
-                        ₱{grandTotal.toLocaleString()}
+                        {formatCurrency(grandTotal, activeCurrency)}
                       </div>
                     </div>
                     <p className="text-[11px] text-sand-muted leading-tight">
@@ -3288,7 +3301,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                   <div className="text-right">
                     <span className="text-xs text-sand-muted block">Amount Due Now</span>
                     <span className="text-2xl font-serif-display font-bold text-emerald-400">
-                      ₱{amountToPayNow.toLocaleString()}
+                      {formatCurrency(amountToPayNow, activeCurrency)}
                     </span>
                   </div>
                 </div>
@@ -3342,21 +3355,21 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                   <div className="space-y-1.5 text-xs bg-[#0B131B]/60 p-3.5 rounded-xl border border-white/10">
                     <div className="flex justify-between text-sand-muted">
                       <span>Base Package Subtotal:</span>
-                      <span className="font-mono text-ivory">₱{baseSubtotal.toLocaleString()}</span>
+                      <span className="font-mono text-ivory">{formatCurrency(baseSubtotal, activeCurrency)}</span>
                     </div>
                     {appliedPromo && discountAmount > 0 && (
                       <div className="flex justify-between text-emerald-400">
                         <span>Discount ({appliedPromo.code}):</span>
-                        <span className="font-mono font-semibold">-₱{discountAmount.toLocaleString()}</span>
+                        <span className="font-mono font-semibold">-{formatCurrency(discountAmount, activeCurrency)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sand-muted">
                       <span>Marine & Environmental Fees:</span>
-                      <span className="font-mono text-ivory">₱{conservationFee.toLocaleString()}</span>
+                      <span className="font-mono text-ivory">{formatCurrency(conservationFee, activeCurrency)}</span>
                     </div>
                     <div className="flex justify-between text-sand-muted border-t border-white/10 pt-1 font-semibold">
                       <span>Total Trip Value:</span>
-                      <span className="font-mono text-ivory">₱{grandTotal.toLocaleString()}</span>
+                      <span className="font-mono text-ivory">{formatCurrency(grandTotal, activeCurrency)}</span>
                     </div>
                   </div>
                 </div>
@@ -3509,7 +3522,7 @@ export const CustomerBookingPortal: React.FC<CustomerBookingPortalProps> = ({
                 </div>
                 <div className="flex justify-between border-t border-white/5 pt-2">
                   <span className="text-sand-muted">Amount Paid:</span>
-                  <strong className="text-emerald-400 font-mono">₱{confirmedBooking.invoice.amountPaid.toLocaleString()}</strong>
+                  <strong className="text-emerald-400 font-mono">{formatCurrency(confirmedBooking.invoice.amountPaid, activeCurrency)}</strong>
                 </div>
               </div>
 
@@ -3696,7 +3709,7 @@ Phone: 0916 525 3517`;
           { label: 'Manifest Count', value: `${numPax} Passenger(s)` },
           { label: 'Travel Date', value: travelDate || 'N/A' },
           { label: 'Payment Method', value: `${paymentMethod || 'Pending'} (${paymentOption ? paymentOption.toUpperCase() : 'N/A'})` },
-          { label: 'Amount Due Today', value: `₱${(amountToPayNow || 0).toLocaleString()}` },
+          { label: 'Amount Due Today', value: formatCurrency(amountToPayNow || 0, activeCurrency) },
         ]}
         confirmText="Yes, Confirm & Reserve"
         cancelText="No, Review Details"

@@ -381,7 +381,7 @@ export const TourGuideCommandCenter: React.FC<TourGuideCommandCenterProps> = ({
                   const status = p.boardingStatus || 'pending';
                   return (
                     <div 
-                      key={p.id || idx}
+                      key={`guide-pax-${activeBooking.id}-${p.id || idx}`}
                       className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-white/20 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
                     >
                       <div className="space-y-1">

@@ -32,6 +32,7 @@ import { Booking, AppSettings } from '../../types';
 import { dispatchAppNotification } from '../../utils/notifications';
 import { CurrencySelector } from '../common/CurrencySelector';
 import { SupportedCurrency, getStoredCurrency, formatCurrency } from '../../utils/currency';
+import { SettleBalanceModal } from './SettleBalanceModal';
 
 interface MyAccountModalProps {
   isOpen: boolean;
@@ -42,6 +43,7 @@ interface MyAccountModalProps {
   onUpdateAppSettings?: (settings: Partial<AppSettings>) => void;
   appSettings?: AppSettings;
   onOpenTracker?: (bookingRef?: string) => void;
+  onUpdateBooking?: (booking: Booking) => void;
   onSignOut?: () => void;
 }
 
@@ -54,9 +56,11 @@ export const MyAccountModal: React.FC<MyAccountModalProps> = ({
   onUpdateAppSettings,
   appSettings,
   onOpenTracker,
+  onUpdateBooking,
   onSignOut
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'profile' | 'theme' | 'vouchers' | 'privacy'>('overview');
+  const [settleBooking, setSettleBooking] = useState<Booking | null>(null);
 
   // RA 10173 Data Privacy & Deletion State
   const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
@@ -437,9 +441,11 @@ export const MyAccountModal: React.FC<MyAccountModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        onClose();
-                        if (onOpenTracker && activeBookingsWithBalance.length > 0) {
-                          onOpenTracker(activeBookingsWithBalance[0].bookingRef);
+                        if (activeBookingsWithBalance.length > 0) {
+                          setSettleBooking(activeBookingsWithBalance[0]);
+                        } else if (onOpenTracker) {
+                          onClose();
+                          onOpenTracker();
                         }
                       }}
                       className="px-5 py-3 rounded-2xl bg-sunset-coral hover:bg-[#ff765b] text-white font-semibold text-xs shadow-xl shadow-sunset-coral/30 active:scale-95 transition-all flex items-center gap-2 shrink-0 cursor-pointer"
@@ -579,7 +585,7 @@ export const MyAccountModal: React.FC<MyAccountModalProps> = ({
                             </span>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                               {paxs.map((p, pIdx) => (
-                                <div key={p.id || pIdx} className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
+                                <div key={`acc-pax-${b.id}-${p.id || pIdx}`} className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between">
                                   <div className="space-y-0.5">
                                     <div className="font-medium text-ivory text-xs flex items-center gap-1.5">
                                       <span>{p.fullName}</span>
@@ -611,8 +617,12 @@ export const MyAccountModal: React.FC<MyAccountModalProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                onClose();
-                                if (onOpenTracker) onOpenTracker(b.bookingRef);
+                                if (balance > 0) {
+                                  setSettleBooking(b);
+                                } else {
+                                  onClose();
+                                  if (onOpenTracker) onOpenTracker(b.bookingRef);
+                                }
                               }}
                               className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-ivory text-xs font-medium border border-white/15 transition-all flex items-center gap-1.5 cursor-pointer"
                             >
@@ -1179,6 +1189,27 @@ export const MyAccountModal: React.FC<MyAccountModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Settle Balance Modal inside MyAccount */}
+      {settleBooking && (
+        <SettleBalanceModal
+          isOpen={!!settleBooking}
+          booking={settleBooking}
+          onClose={() => setSettleBooking(null)}
+          onPaymentSuccess={(updated) => {
+            if (onUpdateBooking) {
+              onUpdateBooking(updated);
+            }
+            setSettleBooking(null);
+            dispatchAppNotification({
+              title: `Payment Received • ${updated.bookingRef}`,
+              message: `Your balance payment was submitted for audit.`,
+              type: 'receipt',
+              bookingRef: updated.bookingRef
+            });
+          }}
+        />
+      )}
     </div>
   );
 };

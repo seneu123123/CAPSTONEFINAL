@@ -435,7 +435,7 @@ export const BookingDetailDrawer: React.FC<BookingDetailDrawerProps> = ({
                     const st = p.boardingStatus || 'pending';
                     return (
                       <div
-                        key={p.id || idx}
+                        key={`drawer-pax-${booking.id}-${p.id || idx}`}
                         className="p-4 rounded-2xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/10 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                       >
                         <div className="flex items-center gap-3">

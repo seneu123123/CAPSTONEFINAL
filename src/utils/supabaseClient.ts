@@ -647,10 +647,39 @@ export async function saveBookingToDb(booking: any): Promise<void> {
     if (booking.invoice) {
       payload.invoice = booking.invoice;
     }
+    if (booking.paymentVerificationStatus || booking.payment_verification_status) {
+      payload.payment_verification_status = booking.paymentVerificationStatus || booking.payment_verification_status;
+    }
+    if (booking.verificationNotes || booking.verification_notes) {
+      payload.verification_notes = booking.verificationNotes || booking.verification_notes;
+    }
 
     await supabase.from('bookings').upsert(payload, { onConflict: 'id' });
   } catch (err) {
     console.warn('Supabase saveBooking error:', err);
+  }
+}
+
+export async function updateBookingPayment(
+  bookingId: string,
+  paymentData: {
+    amountPaid: number;
+    balanceDue: number;
+    paymentStatus: string;
+    paymentVerificationStatus: string;
+    receiptProofUrl?: string;
+    referenceNo?: string;
+  }
+): Promise<void> {
+  try {
+    const supabase = getSupabase();
+    await supabase.from('bookings').update({
+      payment_status: paymentData.paymentStatus,
+      payment_verification_status: paymentData.paymentVerificationStatus,
+      updated_at: new Date().toISOString()
+    }).eq('id', bookingId);
+  } catch (err) {
+    console.warn('Supabase updateBookingPayment error:', err);
   }
 }
 

@@ -905,7 +905,7 @@ export const ComprehensivePassengerManifest: React.FC<ComprehensivePassengerMani
                     const balance = Math.max(0, price - paid);
 
                     return (
-                      <tr key={passenger.id || `${booking.id}-${index}`} className="hover:bg-white/[0.02] transition-colors">
+                      <tr key={`manifest-row-${booking.id}-${passenger.id || index}`} className="hover:bg-white/[0.02] transition-colors">
                         {/* Index */}
                         <td className="py-4 px-4 text-center font-mono text-sand-muted">
                           {index + 1}
@@ -1173,7 +1173,7 @@ export const ComprehensivePassengerManifest: React.FC<ComprehensivePassengerMani
 
                 return (
                   <motion.div
-                    key={passenger.id || `${booking.id}-${index}`}
+                    key={`manifest-card-${booking.id}-${passenger.id || index}`}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="bg-[#090E14] border border-white/10 rounded-3xl p-5 space-y-4 hover:border-white/20 transition-all shadow-lg flex flex-col justify-between"
@@ -2312,7 +2312,7 @@ const PrintManifestDialog: React.FC<PrintManifestDialogProps> = ({
                   </thead>
                   <tbody>
                     {paxs.map((p, idx) => (
-                      <tr key={p.id || idx} className="hover:bg-slate-50">
+                      <tr key={`print-pax-${b.id}-${p.id || idx}`} className="hover:bg-slate-50">
                         <td className="border border-slate-300 p-2 text-center font-mono">{idx + 1}</td>
                         <td className="border border-slate-300 p-2 font-bold">{p.fullName}</td>
                         <td className="border border-slate-300 p-2 font-mono">{p.age} / {p.gender || 'F'} / {p.nationality || 'PH'}</td>

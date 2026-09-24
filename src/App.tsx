@@ -1136,6 +1136,7 @@ export default function App() {
         onUpdateAppSettings={(updatedSettings) => setAppSettings({ ...appSettings, ...updatedSettings })}
         appSettings={appSettings}
         onOpenTracker={handleOpenTracker}
+        onUpdateBooking={handleUpdateBooking}
         onSignOut={handlePromptSignOutTraveler}
       />
 
