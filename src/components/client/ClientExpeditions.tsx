@@ -330,6 +330,7 @@ export const ClientExpeditions: React.FC<ClientExpeditionsProps> = ({
             })}
           </AnimatePresence>
         </motion.div>
+        )}
       </div>
 
       {/* Comprehensive Expedition Details & Brochure Modal */}
