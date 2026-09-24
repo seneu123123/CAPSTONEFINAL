@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, X, Search, CloudSun, Lock, Ticket, User, LogOut, ChevronDown, Sparkles } from 'lucide-react';
+import { Menu, X, Search, CloudSun, Lock, Ticket, User, LogOut, ChevronDown, Sparkles, KeyRound } from 'lucide-react';
 import { RealTimeNotificationCenter } from '../common/RealTimeNotificationCenter';
 import { CurrencySelector } from '../common/CurrencySelector';
 import { UserProfile } from '../../utils/supabaseClient';
@@ -14,7 +14,7 @@ interface ClientNavbarProps {
   travelerUser?: UserProfile | null;
   onOpenTravelerAuth?: () => void;
   onSignOutTraveler?: () => void;
-  onOpenMyAccount?: () => void;
+  onOpenMyAccount?: (tab?: 'overview' | 'profile' | 'password' | 'theme' | 'vouchers' | 'privacy') => void;
 }
 
 export const ClientNavbar: React.FC<ClientNavbarProps> = ({
@@ -262,12 +262,25 @@ export const ClientNavbar: React.FC<ClientNavbarProps> = ({
                     type="button"
                     onClick={() => {
                       setUserDropdownOpen(false);
-                      if (onOpenMyAccount) onOpenMyAccount();
+                      if (onOpenMyAccount) onOpenMyAccount('overview');
                     }}
                     className="w-full text-left px-3 py-2 rounded-xl text-xs text-ivory hover:bg-white/10 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 font-medium cursor-pointer"
                   >
                     <User className="w-3.5 h-3.5 text-sunset-coral" />
                     <span>My Account & Balances</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      if (onOpenMyAccount) onOpenMyAccount('password');
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-sand-muted hover:text-ivory hover:bg-white/10 hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
+                    id="nav-user-change-password-btn"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-sunset-coral" />
+                    <span>Change Password</span>
                   </button>
 
                   <button
@@ -454,7 +467,7 @@ export const ClientNavbar: React.FC<ClientNavbarProps> = ({
                   <button
                     onClick={() => {
                       setMobileMenuOpen(false);
-                      if (onOpenMyAccount) onOpenMyAccount();
+                      if (onOpenMyAccount) onOpenMyAccount('overview');
                     }}
                     className="py-2 px-2.5 text-xs text-ivory hover:bg-white/5 rounded-xl transition-colors flex items-center gap-1.5"
                   >
@@ -464,9 +477,19 @@ export const ClientNavbar: React.FC<ClientNavbarProps> = ({
                   <button
                     onClick={() => {
                       setMobileMenuOpen(false);
+                      if (onOpenMyAccount) onOpenMyAccount('password');
+                    }}
+                    className="py-2 px-2.5 text-xs text-sand-muted hover:text-ivory hover:bg-white/5 rounded-xl transition-colors flex items-center gap-1.5"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-sunset-coral" />
+                    <span>Change Password</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMobileMenuOpen(false);
                       if (onSignOutTraveler) onSignOutTraveler();
                     }}
-                    className="py-2 px-2.5 text-xs text-rose-400 hover:bg-rose-950/20 rounded-xl transition-colors flex items-center gap-1.5 justify-end"
+                    className="col-span-2 py-2 px-2.5 text-xs text-rose-400 hover:bg-rose-950/20 rounded-xl transition-colors flex items-center gap-1.5 justify-center border-t border-white/5 mt-1"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     <span>Sign Out</span>

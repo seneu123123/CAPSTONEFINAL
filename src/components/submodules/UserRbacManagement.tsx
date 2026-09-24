@@ -27,6 +27,7 @@ import {
   Fingerprint,
   FileSpreadsheet
 } from 'lucide-react';
+import { sendEmailNotification } from '../../utils/directEmailService';
 import { 
   StaffAccount, 
   StaffRole, 
@@ -38,6 +39,12 @@ import {
   getStoredStaffAccounts, 
   saveStaffAccounts, 
   getStoredAuditLogs, 
+  saveStoredAuditLogs,
+  unifyAuditLogs,
+  GENESIS_AUDIT_LOGS,
+  syncGenesisAuditsToDb,
+  AUDIT_STORAGE_KEY,
+  STAFF_STORAGE_KEY,
   logSecurityEvent, 
   getRoleBadgeStyle,
   DEFAULT_STAFF_ACCOUNTS,
@@ -276,8 +283,10 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
     // Local fallback baseline
     const localAccounts = getStoredStaffAccounts();
     const localAuditLogs = getStoredAuditLogs();
-    setAccounts(localAccounts);
-    setAuditLogs(localAuditLogs);
+    
+    // Set initial baseline if state is currently empty
+    setAccounts((prev) => (prev.length === 0 ? localAccounts : prev));
+    setAuditLogs((prev) => (prev.length === 0 ? localAuditLogs : prev));
 
     try {
       // Async DB Fetch
@@ -323,31 +332,41 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
         setAccounts(mergedAccounts);
         // Persist to local storage ONLY (syncToDb: false) to prevent Supabase event loop recursion
         saveStaffAccounts(mergedAccounts, false);
+      } else {
+        setAccounts(localAccounts);
       }
 
       const dbAuditLogs = await fetchAuditLogsFromDb();
-      if (Array.isArray(dbAuditLogs) && dbAuditLogs.length > 0) {
-        const mappedAuditLogs: SecurityAuditLog[] = dbAuditLogs.map((log) => ({
-          id: log.id,
-          timestamp: log.timestamp || log.created_at,
-          actorEmail: log.actor_email || log.actorEmail,
-          action: log.action_type || log.action,
-          targetEmail: log.targetEmail,
-          details: log.details,
-          severity: 'info',
-          prevHash: 'GENESIS_BLOCK_HOLIDAY_TRAVELERS_2026',
-          hash: log.sha256_signature || log.hash || 'sha256_hash_placeholder',
-          ipAddress: log.ip_address || log.ipAddress || '127.0.0.1'
-        }));
-        setAuditLogs(mappedAuditLogs);
-      }
+      const mappedAuditLogs: SecurityAuditLog[] = Array.isArray(dbAuditLogs) ? dbAuditLogs.map((log) => ({
+        id: log.id,
+        timestamp: log.timestamp || log.created_at || new Date().toISOString(),
+        actorEmail: log.actor_email || log.actorEmail || 'staff@holidaytravelers.com',
+        action: log.action_type || log.action || 'SYSTEM_ACTION',
+        targetEmail: log.targetEmail || log.target_email,
+        details: log.details || '',
+        severity: (log.severity as any) || 'info',
+        prevHash: log.prev_hash || log.prevHash || 'GENESIS_BLOCK_HOLIDAY_TRAVELERS_2026',
+        hash: log.sha256_signature || log.hash || 'sha256_hash_placeholder',
+        ipAddress: log.ip_address || log.ipAddress || '127.0.0.1'
+      })) : [];
+
+      // Unify static genesis audits, local storage audits, and online Supabase audits into one single stream
+      const unitedLogs = unifyAuditLogs(localAuditLogs, mappedAuditLogs);
+      setAuditLogs(unitedLogs);
+      saveStoredAuditLogs(unitedLogs);
     } catch (err) {
       console.warn('Supabase RBAC reload notice:', err);
+      setAccounts(localAccounts);
+      const unitedFallback = unifyAuditLogs(localAuditLogs, []);
+      setAuditLogs(unitedFallback);
+      saveStoredAuditLogs(unitedFallback);
     }
   };
 
   useEffect(() => {
     reloadData();
+    // Synchronize static genesis audit records to online database as well
+    syncGenesisAuditsToDb().catch(() => {});
 
     // Listen to real-time RBAC updates from Supabase with debouncing to prevent thrashing
     let debounceTimer: NodeJS.Timeout | null = null;
@@ -544,17 +563,23 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
       'Reset Staff Password',
       `Overriding authentication passphrase for ${selectedAccount.fullName} (${selectedAccount.email}).`,
       async () => {
+        const newSalt = generateSalt(16);
+        const newHash = await hashPassword(updatedPassword, newSalt);
+
         const updated = accounts.map((acc) => {
           if (acc.id === selectedAccount.id) {
             return {
               ...acc,
-              password: updatedPassword
+              password: updatedPassword,
+              passwordSalt: newSalt,
+              passwordHash: newHash
             };
           }
           return acc;
         });
 
-        saveStaffAccounts(updated);
+        // Save locally and sync immediately to Supabase
+        saveStaffAccounts(updated, true);
         setAccounts(updated);
 
         await logSecurityEvent(
@@ -569,7 +594,7 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
         setIsPasswordModalOpen(false);
         setSelectedAccount(null);
         setUpdatedPassword('');
-        showNotice(`New authentication credentials established for ${selectedAccount.fullName}.`);
+        showNotice(`New authentication credentials established and synced to cloud for ${selectedAccount.fullName}.`);
       }
     );
   };
@@ -876,10 +901,10 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
         )}
 
         {/* Sub-view Navigation Tabs */}
-        <div className="flex items-center gap-2 mt-6 pt-6 border-t border-white/[0.08] overflow-x-auto pb-1">
+        <div className="flex items-center gap-2 mt-6 pt-6 border-t border-white/[0.08] overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-white/10">
           <button
             onClick={() => setActiveTabSubView('accounts')}
-            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap ${
+            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap shrink-0 ${
               activeTabSubView === 'accounts'
                 ? 'bg-white/10 text-ivory border border-white/20 shadow-md'
                 : 'text-sand-muted hover:text-ivory hover:bg-white/[0.04]'
@@ -889,7 +914,7 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
           </button>
           <button
             onClick={() => setActiveTabSubView('matrix')}
-            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap ${
+            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap shrink-0 ${
               activeTabSubView === 'matrix'
                 ? 'bg-white/10 text-ivory border border-white/20 shadow-md'
                 : 'text-sand-muted hover:text-ivory hover:bg-white/[0.04]'
@@ -899,7 +924,7 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
           </button>
           <button
             onClick={() => setActiveTabSubView('capabilities')}
-            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
               activeTabSubView === 'capabilities'
                 ? 'bg-white/10 text-ivory border border-white/20 shadow-md'
                 : 'text-sand-muted hover:text-ivory hover:bg-white/[0.04]'
@@ -910,7 +935,7 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
           </button>
           <button
             onClick={() => setActiveTabSubView('twofactor')}
-            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
               activeTabSubView === 'twofactor'
                 ? 'bg-white/10 text-ivory border border-white/20 shadow-md'
                 : 'text-sand-muted hover:text-ivory hover:bg-white/[0.04]'
@@ -921,7 +946,7 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
           </button>
           <button
             onClick={() => setActiveTabSubView('audit')}
-            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
               activeTabSubView === 'audit'
                 ? 'bg-white/10 text-ivory border border-white/20 shadow-md'
                 : 'text-sand-muted hover:text-ivory hover:bg-white/[0.04]'

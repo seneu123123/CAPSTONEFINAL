@@ -25,6 +25,9 @@ import {
   signUpWithEmailPassword, 
   sendEmailOtp, 
   verifyEmailOtpToken,
+  sendPasswordResetEmail,
+  verifyResetOtpCode,
+  updateTravelerPassword,
   signOutUser,
   UserProfile 
 } from '../../utils/supabaseClient';
@@ -41,7 +44,7 @@ interface TravelerAuthModalProps {
   onAuthSuccess: (profile: UserProfile) => void;
   onContinueAsGuest?: () => void;
   reasonMessage?: string;
-  initialTab?: 'google_email' | 'signup' | 'guest';
+  initialTab?: 'google_email' | 'signup' | 'guest' | 'forgot_password';
 }
 
 export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
@@ -52,8 +55,8 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
   reasonMessage,
   initialTab = 'google_email'
 }) => {
-  const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'otp' | 'guest'>(
-    initialTab === 'signup' ? 'signup' : initialTab === 'guest' ? 'guest' : 'signin'
+  const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'otp' | 'guest' | 'forgot_password'>(
+    initialTab === 'signup' ? 'signup' : initialTab === 'guest' ? 'guest' : initialTab === 'forgot_password' ? 'forgot_password' : 'signin'
   );
 
   const [email, setEmail] = useState('');
@@ -62,6 +65,11 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
   const [fullName, setFullName] = useState('');
   const [otpToken, setOtpToken] = useState('');
   const [isOtpSent, setIsOtpSent] = useState(false);
+  const [isResetEmailSent, setIsResetEmailSent] = useState(false);
+  const [resetCodeInput, setResetCodeInput] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [showResetNewPassword, setShowResetNewPassword] = useState(false);
 
   // Show/Hide Password Toggles
   const [showSignInPassword, setShowSignInPassword] = useState(false);
@@ -140,6 +148,7 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
     setFullName('');
     setOtpToken('');
     setIsOtpSent(false);
+    setIsResetEmailSent(false);
     setError(null);
     setSuccessMsg(null);
     setLoading(false);
@@ -152,7 +161,15 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       resetForm();
-      setActiveTab(initialTab === 'signup' ? 'signup' : initialTab === 'guest' ? 'guest' : 'signin');
+      setActiveTab(
+        initialTab === 'signup' 
+          ? 'signup' 
+          : initialTab === 'guest' 
+          ? 'guest' 
+          : initialTab === 'forgot_password'
+          ? 'forgot_password'
+          : 'signin'
+      );
     } else {
       resetForm();
     }
@@ -165,11 +182,12 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
     onClose();
   };
 
-  const switchTab = (tab: 'signin' | 'signup' | 'otp' | 'guest') => {
+  const switchTab = (tab: 'signin' | 'signup' | 'otp' | 'guest' | 'forgot_password') => {
     setActiveTab(tab);
     setPassword('');
     setConfirmPassword('');
     setOtpToken('');
+    setIsResetEmailSent(false);
     setError(null);
     setSuccessMsg(null);
   };
@@ -343,6 +361,90 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
     }
   };
 
+  const handleSendForgotPassword = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter a valid registered email address.');
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    setSuccessMsg(null);
+    try {
+      const res = await sendPasswordResetEmail(email.trim());
+      setIsResetEmailSent(true);
+      setSuccessMsg(`A password reset link & 6-digit code was sent to ${email.trim()}. Enter the 6-digit code below to set your new password!`);
+    } catch (err: any) {
+      console.warn('Password reset error:', err);
+      setError(err?.message || 'Could not send reset email. Please verify your email address.');
+      setIsResetEmailSent(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyResetCodeAndChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter your account email.');
+      return;
+    }
+    if (!resetCodeInput.trim()) {
+      setError('Please enter the 6-digit reset code sent to your email.');
+      return;
+    }
+    if (resetNewPassword.length < 6) {
+      setError('New password must be at least 6 characters long.');
+      return;
+    }
+    if (resetNewPassword !== resetConfirmPassword) {
+      setError('Passwords do not match. Please re-enter both password fields.');
+      return;
+    }
+
+    // Verify 6-digit OTP code
+    const isCodeValid = verifyResetOtpCode(email.trim(), resetCodeInput.trim());
+    if (!isCodeValid) {
+      setError('Invalid or expired 6-digit reset code. Please check your email or click Resend Code.');
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+    try {
+      await updateTravelerPassword(email.trim(), resetNewPassword);
+      setSuccessMsg('Password successfully reset! Signing you in...');
+      
+      // Auto login after reset
+      setTimeout(async () => {
+        try {
+          const loginData = await signInWithEmailPassword(email.trim(), resetNewPassword);
+          if (loginData.user) {
+            const profile: UserProfile = {
+              id: loginData.user.id,
+              email: loginData.user.email || email.trim(),
+              full_name: loginData.user.user_metadata?.full_name || email.split('@')[0],
+              role: 'Traveler',
+              status: 'Active',
+              auth_provider: 'email',
+            };
+            onAuthSuccess(profile);
+            resetForm();
+            onClose();
+          }
+        } catch {
+          // If auto login fallback, close modal and switch tab
+          switchTab('signin');
+        }
+      }, 800);
+    } catch (err: any) {
+      setError(err?.message || 'Password update failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGuestSelect = async () => {
     try {
       await signOutUser();
@@ -374,14 +476,22 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
         <div className="relative flex items-center justify-between border-b border-white/10 pb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-sunset-coral/20 to-amber-500/10 border border-sunset-coral/40 flex items-center justify-center text-sunset-coral shadow-inner">
-              <Compass className="w-5 h-5" />
+              {activeTab === 'forgot_password' ? <KeyRound className="w-5 h-5" /> : <Compass className="w-5 h-5" />}
             </div>
             <div>
               <p className="text-[10px] font-sans-body tracking-[0.25em] uppercase text-sunset-coral font-medium">
                 Holiday Travelers
               </p>
               <h3 className="font-serif-display text-2xl text-ivory leading-tight">
-                {activeTab === 'signin' ? 'Sign In to Account' : activeTab === 'signup' ? 'Create Secure Account' : activeTab === 'otp' ? 'Email Code Verification' : 'Guest Exploration'}
+                {activeTab === 'signin' 
+                  ? 'Sign In to Account' 
+                  : activeTab === 'signup' 
+                  ? 'Create Secure Account' 
+                  : activeTab === 'otp' 
+                  ? 'Email Code Verification' 
+                  : activeTab === 'forgot_password'
+                  ? 'Forgot Password'
+                  : 'Guest Exploration'}
               </h3>
             </div>
           </div>
@@ -409,7 +519,7 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
             type="button"
             onClick={() => switchTab('signin')}
             className={`py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'signin' || activeTab === 'otp'
+              activeTab === 'signin' || activeTab === 'otp' || activeTab === 'forgot_password'
                 ? 'bg-sunset-coral text-white shadow-md'
                 : 'text-sand-muted hover:text-ivory'
             }`}
@@ -523,10 +633,11 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
                   </label>
                   <button
                     type="button"
-                    onClick={() => setActiveTab('otp')}
-                    className="text-[11px] text-sunset-coral/90 hover:text-sunset-coral hover:underline cursor-pointer"
+                    onClick={() => switchTab('forgot_password')}
+                    className="text-[11px] text-sunset-coral hover:text-[#ff765b] hover:underline cursor-pointer font-medium"
+                    id="btn-forgot-password"
                   >
-                    Send Magic Code instead
+                    Forgot password?
                   </button>
                 </div>
                 <div className="relative">
@@ -545,6 +656,15 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
                     tabIndex={-1}
                   >
                     {showSignInPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="flex justify-end pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => switchTab('otp')}
+                    className="text-[11px] text-sand-muted hover:text-sand-light transition-colors cursor-pointer"
+                  >
+                    Send Magic Code instead →
                   </button>
                 </div>
               </div>
@@ -879,6 +999,171 @@ export const TravelerAuthModal: React.FC<TravelerAuthModalProps> = ({
             >
               Continue Browsing as Guest
             </button>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 5: FORGOT PASSWORD (Resend SMTP & 6-Digit Code Recovery Flow)        */}
+        {/* ========================================================================= */}
+        {activeTab === 'forgot_password' && (
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-1.5 text-left">
+              <div className="flex items-center gap-2 text-sunset-coral font-medium text-xs">
+                <KeyRound className="w-4 h-4" />
+                <span>Account Recovery & Password Reset</span>
+              </div>
+              <p className="text-xs text-sand-muted leading-relaxed font-light">
+                Enter your account email address. We will dispatch a 6-digit reset code and recovery link to your inbox via Resend.
+              </p>
+            </div>
+
+            {!isResetEmailSent ? (
+              <form onSubmit={handleSendForgotPassword} className="space-y-3.5">
+                <div className="space-y-1 text-left">
+                  <label className="text-xs text-sand-muted flex items-center gap-1.5 font-light">
+                    <Mail className="w-3.5 h-3.5 text-sunset-coral" />
+                    <span>Account Email Address</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    required
+                    className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-ivory placeholder:text-white/30 focus:outline-none focus:border-sunset-coral/80 transition-colors font-mono"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || !email.trim() || !email.includes('@')}
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-sunset-coral to-[#ff765b] text-white font-medium text-sm flex items-center justify-center gap-2 hover:opacity-95 transition-all shadow-lg shadow-sunset-coral/25 disabled:opacity-60 cursor-pointer"
+                  id="btn-send-reset-link"
+                >
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Send Password Reset Code & Link</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : (
+              /* Inline 6-Digit Verification Code & Password Reset Form */
+              <div className="space-y-4 animate-fade-in">
+                <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-500/30 text-emerald-200 text-xs space-y-1 text-left">
+                  <div className="flex items-center gap-2 font-medium text-emerald-300">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>6-Digit Recovery Code Dispatched</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-emerald-100/80 font-light">
+                    We've sent a 6-digit code to <span className="font-mono text-emerald-200 font-semibold">{email}</span>. Enter it below with your new password!
+                  </p>
+                </div>
+
+                <form onSubmit={handleVerifyResetCodeAndChangePassword} className="space-y-3.5 text-left">
+                  <div className="space-y-1">
+                    <label className="text-xs text-sand-muted flex items-center gap-1.5 font-light">
+                      <KeyRound className="w-3.5 h-3.5 text-sunset-coral" />
+                      <span>6-Digit Reset Code (from email)</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={resetCodeInput}
+                      onChange={(e) => setResetCodeInput(e.target.value.replace(/\D/g, ''))}
+                      placeholder="e.g. 849120"
+                      required
+                      className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-center font-mono text-lg font-bold tracking-[0.3em] text-sunset-coral placeholder:text-white/20 focus:outline-none focus:border-sunset-coral/80"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-sand-muted flex items-center gap-1.5 font-light">
+                      <Lock className="w-3.5 h-3.5 text-sunset-coral" />
+                      <span>New Password</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showResetNewPassword ? "text" : "password"}
+                        value={resetNewPassword}
+                        onChange={(e) => setResetNewPassword(e.target.value)}
+                        placeholder="At least 6 characters"
+                        required
+                        className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-ivory placeholder:text-white/30 focus:outline-none focus:border-sunset-coral/80 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowResetNewPassword(!showResetNewPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-sand-muted hover:text-ivory"
+                      >
+                        {showResetNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-sand-muted flex items-center gap-1.5 font-light">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-sunset-coral" />
+                      <span>Confirm New Password</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={resetConfirmPassword}
+                      onChange={(e) => setResetConfirmPassword(e.target.value)}
+                      placeholder="Re-enter new password"
+                      required
+                      className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-ivory placeholder:text-white/30 focus:outline-none focus:border-sunset-coral/80"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading || !resetCodeInput.trim() || resetNewPassword.length < 6 || resetNewPassword !== resetConfirmPassword}
+                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-sunset-coral to-[#ff765b] text-white font-medium text-sm flex items-center justify-center gap-2 hover:opacity-95 transition-all shadow-lg shadow-sunset-coral/25 disabled:opacity-60 cursor-pointer"
+                  >
+                    {loading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Reset Password & Sign In</span>
+                      </>
+                    )}
+                  </button>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={handleSendForgotPassword}
+                      className="text-[11px] text-sand-muted hover:text-sunset-coral underline cursor-pointer"
+                    >
+                      Didn't receive code? Resend Email Code
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
+              <button
+                type="button"
+                onClick={() => switchTab('signin')}
+                className="text-sand-muted hover:text-ivory flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                ← Back to Sign In
+              </button>
+
+              <button
+                type="button"
+                onClick={() => switchTab('otp')}
+                className="text-sunset-coral hover:underline cursor-pointer"
+              >
+                Use Magic Code instead
+              </button>
+            </div>
           </div>
         )}
 

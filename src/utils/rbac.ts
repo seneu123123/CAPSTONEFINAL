@@ -221,8 +221,84 @@ export const DEFAULT_STAFF_ACCOUNTS: StaffAccount[] = [
   }
 ];
 
-const STAFF_STORAGE_KEY = 'holiday_staff_accounts_v2';
-const AUDIT_STORAGE_KEY = 'holiday_security_audit_logs_v2';
+export const STAFF_STORAGE_KEY = 'holiday_staff_accounts_v2';
+export const AUDIT_STORAGE_KEY = 'holiday_security_audit_logs_v2';
+
+export const GENESIS_AUDIT_LOGS: SecurityAuditLog[] = [
+  {
+    id: 'audit-boot-01',
+    timestamp: '2026-01-10T08:00:00.000Z',
+    actorEmail: 'karlljacob8@gmail.com',
+    action: 'RBAC_SECURITY_INITIALIZE',
+    details: 'Super Administrator provisioned enterprise commercial RBAC matrix with RFC 6238 TOTP authenticators.',
+    severity: 'info',
+    prevHash: 'GENESIS_BLOCK_HOLIDAY_TRAVELERS_2026',
+    hash: '0e32f91a7c5b4e6d8a9f2b1c4e6d8a9f2b1c4e6d8a9f2b1c4e6d8a9f2b1c4e6d',
+    ipAddress: '192.168.1.100 (Backbone Node)'
+  },
+  {
+    id: 'audit-boot-02',
+    timestamp: '2026-02-01T10:15:00.000Z',
+    actorEmail: 'karlljacob8@gmail.com',
+    action: 'DEFAULT_CREDENTIALS_SET',
+    targetEmail: 'karlljacob8@gmail.com',
+    details: 'Default enterprise credentials provisioned with mandatory 2FA enforcement.',
+    severity: 'info',
+    prevHash: '0e32f91a7c5b4e6d8a9f2b1c4e6d8a9f2b1c4e6d8a9f2b1c4e6d8a9f2b1c4e6d',
+    hash: '5d8f2a1c9e4b6d7a8f1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f',
+    ipAddress: '192.168.1.100 (Backbone Node)'
+  },
+  {
+    id: 'audit-boot-03',
+    timestamp: '2026-09-09T06:45:00.000Z',
+    actorEmail: 'karlljacob8@gmail.com',
+    action: 'ZERO_PUBLIC_FOOTPRINT_VERIFIED',
+    details: 'Admin triggers hidden from public DOM. Keyboard shortcut & multi-gesture ingress activated.',
+    severity: 'info',
+    prevHash: '5d8f2a1c9e4b6d7a8f1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f',
+    hash: '7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b',
+    ipAddress: '192.168.1.100 (Backbone Node)'
+  }
+];
+
+export function saveStoredAuditLogs(logs: SecurityAuditLog[]): void {
+  try {
+    localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(logs));
+  } catch (err) {
+    console.warn('Failed to save audit logs to localStorage:', err);
+  }
+}
+
+export function unifyAuditLogs(
+  localLogs: SecurityAuditLog[] = [],
+  cloudLogs: SecurityAuditLog[] = []
+): SecurityAuditLog[] {
+  const auditMap = new Map<string, SecurityAuditLog>();
+
+  // 1. Static genesis baseline records (always present)
+  GENESIS_AUDIT_LOGS.forEach((log) => auditMap.set(log.id, log));
+
+  // 2. Local logs
+  if (Array.isArray(localLogs)) {
+    localLogs.forEach((log) => {
+      if (log && log.id) auditMap.set(log.id, log);
+    });
+  }
+
+  // 3. Online database logs
+  if (Array.isArray(cloudLogs)) {
+    cloudLogs.forEach((log) => {
+      if (log && log.id) auditMap.set(log.id, log);
+    });
+  }
+
+  // Deterministic descending sort with ID tiebreaker to eliminate UI jumping
+  return Array.from(auditMap.values()).sort((a, b) => {
+    const diff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    if (diff !== 0) return diff;
+    return (b.id || '').localeCompare(a.id || '');
+  });
+}
 
 export function getStoredStaffAccounts(): StaffAccount[] {
   try {
@@ -333,10 +409,19 @@ import {
 export async function syncStaffAccountToCloud(acc: StaffAccount): Promise<void> {
   let salt = acc.passwordSalt;
   let hash = acc.passwordHash;
-  if ((acc.password || DEFAULT_PASSWORD_VALUE) && (!hash || !salt)) {
+  // If plain password is provided, generate fresh salt and hash
+  if (acc.password) {
+    salt = generateSalt(16);
+    hash = await hashPassword(acc.password, salt);
+    acc.passwordSalt = salt;
+    acc.passwordHash = hash;
+  } else if (!hash || !salt) {
     salt = salt || generateSalt(16);
-    hash = await hashPassword(acc.password || DEFAULT_PASSWORD_VALUE, salt);
+    hash = await hashPassword(DEFAULT_PASSWORD_VALUE, salt);
+    acc.passwordSalt = salt;
+    acc.passwordHash = hash;
   }
+
   await saveStaffAccountToDb({
     id: acc.id,
     email: acc.email,
@@ -467,43 +552,43 @@ export async function authenticateStaffCredentialsAsync(
   const normEmail = email.trim().toLowerCase();
   let account = findStaffAccountByEmail(normEmail);
 
-  // If not found locally, query Supabase Cloud staff_accounts
-  if (!account) {
-    try {
-      const dbAcc = await fetchStaffAccountByEmailFromDb(normEmail);
-      if (dbAcc) {
-        let cleanFullName = dbAcc.full_name || dbAcc.fullName || 'Staff Operator';
-        if (normEmail === 'karlljacob8@gmail.com') {
-          cleanFullName = 'Karll Jacob';
-        }
-
-        account = {
-          id: dbAcc.id,
-          fullName: cleanFullName,
-          email: dbAcc.email,
-          role: dbAcc.role || 'Tour Operations Manager',
-          status: dbAcc.status || 'Active',
-          allowedTabs: dbAcc.allowed_tabs || dbAcc.allowedTabs || ROLE_DEFAULT_TABS[dbAcc.role as StaffRole] || [],
-          granularPermissions: dbAcc.permissions || dbAcc.granularPermissions || ROLE_DEFAULT_PERMISSIONS[dbAcc.role as StaffRole] || [],
-          twoFactorEnabled: dbAcc.two_factor_enabled ?? dbAcc.twoFactorEnabled ?? true,
-          backupCodes: dbAcc.backup_codes || dbAcc.backupCodes || [],
-          totpSecret: dbAcc.totp_secret || dbAcc.totpSecret || generateTotpSecret(20),
-          passwordHash: dbAcc.password_hash || dbAcc.passwordHash,
-          passwordSalt: dbAcc.password_salt || dbAcc.passwordSalt,
-          phoneNumber: dbAcc.phone || dbAcc.phoneNumber,
-          notes: dbAcc.notes,
-          lastLogin: dbAcc.last_login_at || dbAcc.lastLogin,
-          createdAt: dbAcc.created_at || new Date().toISOString()
-        };
-
-        // Cache into local accounts storage so this device remembers it
-        const currentLocal = getStoredStaffAccounts();
-        const updated = [...currentLocal.filter((a) => a.email.toLowerCase() !== normEmail), account];
-        localStorage.setItem(STAFF_STORAGE_KEY, JSON.stringify(updated));
+  // Synchronize freshest credentials from Supabase Cloud staff_accounts
+  try {
+    const dbAcc = await fetchStaffAccountByEmailFromDb(normEmail);
+    if (dbAcc) {
+      let cleanFullName = dbAcc.full_name || dbAcc.fullName || 'Staff Operator';
+      if (normEmail === 'karlljacob8@gmail.com') {
+        cleanFullName = 'Karll Jacob';
       }
-    } catch (e) {
-      console.warn('Supabase remote staff check notice:', e);
+
+      account = {
+        id: dbAcc.id,
+        fullName: cleanFullName,
+        email: dbAcc.email,
+        role: dbAcc.role || account?.role || 'Tour Operations Manager',
+        status: dbAcc.status || account?.status || 'Active',
+        allowedTabs: dbAcc.allowed_tabs || dbAcc.allowedTabs || account?.allowedTabs || ROLE_DEFAULT_TABS[dbAcc.role as StaffRole] || [],
+        granularPermissions: dbAcc.permissions || dbAcc.granularPermissions || account?.granularPermissions || ROLE_DEFAULT_PERMISSIONS[dbAcc.role as StaffRole] || [],
+        twoFactorEnabled: dbAcc.two_factor_enabled ?? dbAcc.twoFactorEnabled ?? account?.twoFactorEnabled ?? true,
+        backupCodes: dbAcc.backup_codes || dbAcc.backupCodes || account?.backupCodes || [],
+        totpSecret: dbAcc.totp_secret || dbAcc.totpSecret || account?.totpSecret || generateTotpSecret(20),
+        passwordHash: dbAcc.password_hash || dbAcc.passwordHash || account?.passwordHash,
+        passwordSalt: dbAcc.password_salt || dbAcc.passwordSalt || account?.passwordSalt,
+        password: dbAcc.password || account?.password,
+        phoneNumber: dbAcc.phone || dbAcc.phoneNumber || account?.phoneNumber,
+        notes: dbAcc.notes || account?.notes,
+        requiresPasswordChange: dbAcc.requires_password_change ?? dbAcc.requiresPasswordChange ?? account?.requiresPasswordChange ?? false,
+        lastLogin: dbAcc.last_login_at || dbAcc.lastLogin || account?.lastLogin,
+        createdAt: dbAcc.created_at || account?.createdAt || new Date().toISOString()
+      };
+
+      // Cache into local accounts storage so this device immediately reflects latest cloud credentials
+      const currentLocal = getStoredStaffAccounts();
+      const updated = [...currentLocal.filter((a) => a.email.toLowerCase() !== normEmail), account];
+      localStorage.setItem(STAFF_STORAGE_KEY, JSON.stringify(updated));
     }
+  } catch (e) {
+    console.warn('Supabase remote staff check notice:', e);
   }
 
   if (!account) {
@@ -628,8 +713,7 @@ export async function logSecurityEvent(
   targetEmail?: string
 ): Promise<void> {
   try {
-    const raw = localStorage.getItem(AUDIT_STORAGE_KEY);
-    const logs: SecurityAuditLog[] = raw ? JSON.parse(raw) : [];
+    const logs = getStoredAuditLogs();
     const prevHash = logs.length > 0 && logs[0].hash 
       ? logs[0].hash 
       : 'GENESIS_BLOCK_HOLIDAY_TRAVELERS_2026';
@@ -660,10 +744,10 @@ export async function logSecurityEvent(
       ipAddress: '192.168.1.104 (Encrypted Tunnel)'
     };
 
-    logs.unshift(entry);
+    const updated = [entry, ...logs];
     // Retain up to 300 logs
-    if (logs.length > 300) logs.pop();
-    localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(logs));
+    if (updated.length > 300) updated.pop();
+    saveStoredAuditLogs(updated);
 
     // Asynchronously log to Supabase Cloud Database
     logSecurityEventToDb({
@@ -686,46 +770,33 @@ export async function logSecurityEvent(
 export function getStoredAuditLogs(): SecurityAuditLog[] {
   try {
     const raw = localStorage.getItem(AUDIT_STORAGE_KEY);
-    if (!raw) {
-      const genesisLogs: SecurityAuditLog[] = [
-        {
-          id: 'audit-boot-01',
-          timestamp: '2026-01-10T08:00:00.000Z',
-          actorEmail: 'karlljacob8@gmail.com',
-          action: 'RBAC_SECURITY_INITIALIZE',
-          details: 'Super Administrator provisioned enterprise commercial RBAC matrix with RFC 6238 TOTP authenticators.',
-          severity: 'info',
-          prevHash: 'GENESIS_BLOCK_HOLIDAY_TRAVELERS_2026',
-          hash: '0e32f91a7c5b4e6d8a9f2b1c4e6d8a9f2b1c4e6d8a9f2b1c4e6d8a9f2b1c4e6d'
-        },
-        {
-          id: 'audit-boot-02',
-          timestamp: '2026-02-01T10:15:00.000Z',
-          actorEmail: 'karlljacob8@gmail.com',
-          action: 'DEFAULT_CREDENTIALS_SET',
-          targetEmail: 'karlljacob8@gmail.com',
-          details: 'Default enterprise credentials provisioned with mandatory 2FA enforcement.',
-          severity: 'info',
-          prevHash: '0e32f91a7c5b4e6d8a9f2b1c4e6d8a9f2b1c4e6d8a9f2b1c4e6d8a9f2b1c4e6d',
-          hash: '5d8f2a1c9e4b6d7a8f1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f'
-        },
-        {
-          id: 'audit-boot-03',
-          timestamp: '2026-09-09T06:45:00.000Z',
-          actorEmail: 'karlljacob8@gmail.com',
-          action: 'ZERO_PUBLIC_FOOTPRINT_VERIFIED',
-          details: 'Admin triggers hidden from public DOM. Keyboard shortcut & multi-gesture ingress activated.',
-          severity: 'info',
-          prevHash: '5d8f2a1c9e4b6d7a8f1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f',
-          hash: '7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b'
-        }
-      ];
-      localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(genesisLogs));
-      return genesisLogs;
-    }
-    return JSON.parse(raw);
+    const parsedLogs: SecurityAuditLog[] = raw ? JSON.parse(raw) : [];
+    const united = unifyAuditLogs(parsedLogs);
+    saveStoredAuditLogs(united);
+    return united;
   } catch {
-    return [];
+    return [...GENESIS_AUDIT_LOGS];
+  }
+}
+
+export async function syncGenesisAuditsToDb(): Promise<void> {
+  try {
+    for (const genesis of GENESIS_AUDIT_LOGS) {
+      await logSecurityEventToDb({
+        id: genesis.id,
+        timestamp: genesis.timestamp,
+        actorName: genesis.actorEmail.split('@')[0],
+        actorEmail: genesis.actorEmail,
+        actorRole: 'Super Admin',
+        actionType: genesis.action,
+        submodule: 'RBAC Genesis',
+        details: genesis.details,
+        ipAddress: genesis.ipAddress || '192.168.1.100 (Backbone Node)',
+        sha256Signature: genesis.hash
+      });
+    }
+  } catch (err) {
+    console.warn('Genesis audits sync to DB notice:', err);
   }
 }
 

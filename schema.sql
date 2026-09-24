@@ -11,9 +11,13 @@ CREATE TABLE IF NOT EXISTS users (
     full_name VARCHAR(255) NOT NULL,
     phone VARCHAR(50),
     avatar_url TEXT,
+    password_updated_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Ensure password_updated_at column exists if table already created
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_updated_at TIMESTAMP WITH TIME ZONE;
 
 -- 2. Staff Accounts Table (Enterprise RBAC Governance & Multi-Role Staff)
 CREATE TABLE IF NOT EXISTS staff_accounts (

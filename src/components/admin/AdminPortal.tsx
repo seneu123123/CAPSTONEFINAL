@@ -220,6 +220,8 @@
             bookings={rlsBookings}
             onAddPaymentRecord={onAddPaymentRecord}
             isOperatorView={true}
+            onGoToPaymentGateAudit={() => onTabChange('payment_gate')}
+            onUpdateBooking={onUpdateBooking}
           />
         )}
 

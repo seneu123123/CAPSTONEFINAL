@@ -15,7 +15,9 @@ import {
   Building2,
   Send,
   Compass,
-  ArrowUpRight
+  ArrowUpRight,
+  ShieldAlert,
+  AlertCircle
 } from 'lucide-react';
 import { RubberStamp } from '../common/RubberStamp';
 import { ActionConfirmModal } from '../common/ActionConfirmModal';
@@ -25,12 +27,16 @@ interface PaymentInvoiceManagementProps {
   bookings: Booking[];
   onAddPaymentRecord: (bookingId: string, payment: PaymentRecord) => void;
   isOperatorView: boolean;
+  onGoToPaymentGateAudit?: () => void;
+  onUpdateBooking?: (booking: Booking) => void;
 }
 
 export const PaymentInvoiceManagement: React.FC<PaymentInvoiceManagementProps> = ({
   bookings,
   onAddPaymentRecord,
-  isOperatorView
+  isOperatorView,
+  onGoToPaymentGateAudit,
+  onUpdateBooking
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -43,17 +49,67 @@ export const PaymentInvoiceManagement: React.FC<PaymentInvoiceManagementProps> =
   const [referenceNo, setReferenceNo] = useState('');
   const [isConfirmPaymentOpen, setIsConfirmPaymentOpen] = useState(false);
 
+  // Helper function: Strictly determine audit & payment status
+  const getBookingAuditState = (b: Booking) => {
+    const pmtStatus = b.paymentVerificationStatus || b.invoice.payments[0]?.status || (b.invoice.amountPaid > 0 ? 'Pending Verification' : 'Unpaid');
+    const isVerified = pmtStatus === 'Verified' || (b.verifiedBy && pmtStatus !== 'Flagged / Needs Re-upload');
+    const isPendingAudit = pmtStatus === 'Pending Verification' || (b.invoice.payments.some(p => p.status === 'Pending Verification') && !isVerified);
+    const isFlagged = pmtStatus === 'Flagged / Needs Re-upload' || pmtStatus === 'Rejected';
+
+    let displayStatus: 'Paid' | 'Pending Audit' | 'Partial' | 'Partial (Pending Audit)' | 'Flagged' | 'Unpaid';
+
+    if (b.invoice.balanceDue === 0 && isVerified) {
+      displayStatus = 'Paid';
+    } else if (b.invoice.balanceDue === 0 && !isVerified) {
+      displayStatus = 'Pending Audit';
+    } else if (b.invoice.amountPaid > 0 && isVerified) {
+      displayStatus = 'Partial';
+    } else if (b.invoice.amountPaid > 0 && !isVerified) {
+      displayStatus = 'Partial (Pending Audit)';
+    } else if (isFlagged) {
+      displayStatus = 'Flagged';
+    } else {
+      displayStatus = 'Unpaid';
+    }
+
+    return {
+      pmtStatus,
+      isVerified,
+      isPendingAudit,
+      isFlagged,
+      displayStatus
+    };
+  };
+
   const filteredBookings = bookings.filter((b) => {
     const matchesSearch =
       b.bookingRef.toLowerCase().includes(searchTerm.toLowerCase()) ||
       b.customer.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       b.invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || b.paymentStatus === statusFilter;
-    return matchesSearch && matchesStatus;
+
+    const { displayStatus } = getBookingAuditState(b);
+
+    if (statusFilter === 'All') return matchesSearch;
+    if (statusFilter === 'Paid (Verified)') return matchesSearch && displayStatus === 'Paid';
+    if (statusFilter === 'Pending Audit') return matchesSearch && (displayStatus === 'Pending Audit' || displayStatus === 'Partial (Pending Audit)');
+    if (statusFilter === 'Flagged') return matchesSearch && displayStatus === 'Flagged';
+    if (statusFilter === 'Unpaid') return matchesSearch && (displayStatus === 'Unpaid' || displayStatus === 'Partial');
+
+    return matchesSearch;
   });
 
-  const totalRevenueCollected = bookings.reduce((sum, b) => sum + b.invoice.amountPaid, 0);
-  const totalBalancePending = bookings.reduce((sum, b) => sum + b.invoice.balanceDue, 0);
+  // Accurate audited figures
+  const totalVerifiedRevenue = bookings.reduce((sum, b) => {
+    const { isVerified } = getBookingAuditState(b);
+    return sum + (isVerified ? b.invoice.amountPaid : 0);
+  }, 0);
+
+  const totalPendingAuditRevenue = bookings.reduce((sum, b) => {
+    const { isPendingAudit } = getBookingAuditState(b);
+    return sum + (isPendingAudit ? b.invoice.amountPaid : 0);
+  }, 0);
+
+  const pendingAuditCount = bookings.filter((b) => getBookingAuditState(b).isPendingAudit).length;
 
   const handleOpenPaymentModal = (b: Booking) => {
     setRecordingBooking(b);
@@ -77,13 +133,28 @@ export const PaymentInvoiceManagement: React.FC<PaymentInvoiceManagementProps> =
       method: paymentMethod,
       referenceNo: referenceNo || `REF-${Date.now()}`,
       status: 'Verified',
-      notes: 'Payment verified and posted by Finance Operations'
+      verifiedBy: 'Finance Operations',
+      verifiedAt: new Date().toISOString(),
+      notes: 'Direct payment verified & posted by Finance Operations'
     };
 
     onAddPaymentRecord(recordingBooking.id, newPayment);
+
+    // If fully paid by this record, also mark booking as verified
+    if (recordingBooking.invoice.balanceDue - paymentAmount <= 0 && onUpdateBooking) {
+      onUpdateBooking({
+        ...recordingBooking,
+        paymentStatus: 'Paid',
+        paymentVerificationStatus: 'Verified',
+        verifiedBy: 'Finance Operations',
+        verifiedAt: new Date().toISOString(),
+        verificationNotes: 'Payment verified and posted via Invoice Management.'
+      });
+    }
+
     dispatchAppNotification({
-      title: 'Payment Successfully Posted',
-      message: `Recorded ₱${paymentAmount.toLocaleString()} via ${paymentMethod} for ${recordingBooking.bookingRef}`,
+      title: 'Payment Verified & Posted',
+      message: `Recorded & verified ₱${paymentAmount.toLocaleString()} via ${paymentMethod} for ${recordingBooking.bookingRef}`,
       type: 'payment_verified',
       bookingRef: recordingBooking.bookingRef,
       actionLabel: 'View Receipt'
@@ -111,15 +182,21 @@ export const PaymentInvoiceManagement: React.FC<PaymentInvoiceManagementProps> =
             </p>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <div className="bg-[#070B0E] p-3.5 px-5 rounded-xl border border-white/[0.06]">
-              <span className="text-[10px] uppercase tracking-wider text-sand-muted block">Collected</span>
-              <span className="font-serif-display text-2xl text-emerald-400">₱{totalRevenueCollected.toLocaleString()}</span>
+              <span className="text-[10px] uppercase tracking-wider text-sand-muted block">Audited Revenue</span>
+              <span className="font-serif-display text-2xl text-emerald-400">₱{totalVerifiedRevenue.toLocaleString()}</span>
             </div>
-            <div className="bg-[#070B0E] p-3.5 px-5 rounded-xl border border-white/[0.06]">
-              <span className="text-[10px] uppercase tracking-wider text-sand-muted block">Pending</span>
-              <span className="font-serif-display text-2xl text-amber-400">₱{totalBalancePending.toLocaleString()}</span>
-            </div>
+            {totalPendingAuditRevenue > 0 && (
+              <div className="bg-amber-950/40 p-3.5 px-5 rounded-xl border border-amber-500/30">
+                <span className="text-[10px] uppercase tracking-wider text-amber-300 block flex items-center gap-1">
+                  <Clock className="w-3 h-3 animate-pulse" />
+                  Awaiting Gate Audit
+                </span>
+                <span className="font-serif-display text-2xl text-amber-300">₱{totalPendingAuditRevenue.toLocaleString()}</span>
+                <span className="text-[10px] text-amber-200/70 block mt-0.5">{pendingAuditCount} invoice{pendingAuditCount === 1 ? '' : 's'}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -136,12 +213,12 @@ export const PaymentInvoiceManagement: React.FC<PaymentInvoiceManagementProps> =
             />
           </div>
 
-          <div className="flex gap-2">
-            {['All', 'Paid', 'Partial', 'Unpaid'].map((st) => (
+          <div className="flex flex-wrap gap-2">
+            {['All', 'Paid (Verified)', 'Pending Audit', 'Flagged', 'Unpaid'].map((st) => (
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
-                className={`px-4 py-1.5 rounded-full text-xs font-sans-body tracking-wider transition ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-sans-body tracking-wider transition ${
                   statusFilter === st
                     ? 'bg-sunset-coral text-white font-medium'
                     : 'bg-white/[0.04] text-sand-muted hover:text-ivory'
@@ -165,13 +242,16 @@ export const PaymentInvoiceManagement: React.FC<PaymentInvoiceManagementProps> =
                 <th className="py-3.5 px-6">Tour Package</th>
                 <th className="py-3.5 px-6">Total Amount</th>
                 <th className="py-3.5 px-6">Paid / Balance</th>
-                <th className="py-3.5 px-6">Status</th>
+                <th className="py-3.5 px-6">Payment Gate Audit</th>
+                <th className="py-3.5 px-6">Invoice Status</th>
                 <th className="py-3.5 px-6 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.04] text-sand-muted">
               {filteredBookings.map((b) => {
                 const inv = b.invoice;
+                const { isVerified, isPendingAudit, isFlagged, displayStatus } = getBookingAuditState(b);
+
                 return (
                   <tr key={b.id} className="hover:bg-white/[0.02] transition">
                     <td className="py-4 px-6 font-mono text-ivory">
@@ -190,24 +270,86 @@ export const PaymentInvoiceManagement: React.FC<PaymentInvoiceManagementProps> =
                       ₱{inv.totalAmount.toLocaleString()}
                     </td>
                     <td className="py-4 px-6 font-mono">
-                      <div className="text-emerald-400">₱{inv.amountPaid.toLocaleString()}</div>
+                      <div className={isVerified ? 'text-emerald-400 font-medium' : 'text-amber-300'}>
+                        ₱{inv.amountPaid.toLocaleString()}
+                        {!isVerified && inv.amountPaid > 0 && (
+                          <span className="text-[10px] block text-amber-400/80 font-sans font-normal">(Unverified)</span>
+                        )}
+                      </div>
                       {inv.balanceDue > 0 && (
                         <div className="text-amber-400 text-[11px]">Due: ₱{inv.balanceDue.toLocaleString()}</div>
                       )}
                     </td>
+
+                    {/* PAYMENT GATE AUDIT COLUMN */}
+                    <td className="py-4 px-6">
+                      {isVerified ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                            Audit Verified
+                          </span>
+                          <span className="text-[10px] text-sand-muted/70 block font-mono">
+                            By: {b.verifiedBy || 'Finance'}
+                          </span>
+                        </div>
+                      ) : isPendingAudit ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center gap-1 bg-amber-950/80 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                            <Clock className="w-3 h-3 text-amber-400 animate-pulse shrink-0" />
+                            Pending Audit
+                          </span>
+                          {onGoToPaymentGateAudit && (
+                            <button
+                              onClick={onGoToPaymentGateAudit}
+                              className="text-[10px] text-sunset-coral hover:underline flex items-center gap-0.5 cursor-pointer font-medium"
+                            >
+                              Go to Audit Gate →
+                            </button>
+                          )}
+                        </div>
+                      ) : isFlagged ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 bg-red-950/80 text-red-300 border border-red-500/30 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                            <ShieldAlert className="w-3 h-3 text-red-400 shrink-0" />
+                            Audit Flagged
+                          </span>
+                          <span className="text-[10px] text-red-300/80 block max-w-[150px] truncate">
+                            {b.verificationNotes || 'Re-upload required'}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-sand-muted/50 italic">No proof uploaded</span>
+                      )}
+                    </td>
+
+                    {/* INVOICE STATUS COLUMN */}
                     <td className="py-4 px-6">
                       <span
                         className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          inv.status === 'Paid'
+                          displayStatus === 'Paid'
                             ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/30'
-                            : inv.status === 'Partial'
+                            : displayStatus === 'Pending Audit' || displayStatus === 'Partial (Pending Audit)'
                             ? 'bg-amber-950/80 text-amber-300 border border-amber-500/30'
-                            : 'bg-red-950/80 text-red-300 border border-red-500/30'
+                            : displayStatus === 'Flagged'
+                            ? 'bg-red-950/80 text-red-300 border border-red-500/30'
+                            : 'bg-white/[0.04] text-sand-muted border border-white/10'
                         }`}
                       >
-                        {inv.status}
+                        {displayStatus === 'Paid'
+                          ? 'PAID (VERIFIED)'
+                          : displayStatus === 'Pending Audit'
+                          ? 'PENDING AUDIT'
+                          : displayStatus === 'Partial'
+                          ? 'PARTIAL (VERIFIED)'
+                          : displayStatus === 'Partial (Pending Audit)'
+                          ? 'PARTIAL (PENDING AUDIT)'
+                          : displayStatus === 'Flagged'
+                          ? 'AUDIT FLAGGED'
+                          : 'UNPAID'}
                       </span>
                     </td>
+
                     <td className="py-4 px-6 text-right space-x-2">
                       <button
                         onClick={() => setViewingInvoiceBooking(b)}

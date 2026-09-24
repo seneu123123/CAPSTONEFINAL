@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Lock, Clock, ShieldAlert, LogOut, KeyRound } from 'lucide-react';
-import { authenticateStaffCredentials, logSecurityEvent, findStaffAccountByEmail } from '../../utils/rbac';
+import { authenticateStaffCredentialsAsync, logSecurityEvent, findStaffAccountByEmail } from '../../utils/rbac';
 
 interface SessionInactivityGuardProps {
   adminEmail: string;
@@ -84,30 +84,35 @@ export const SessionInactivityGuard: React.FC<SessionInactivityGuardProps> = ({
   }, [adminEmail, idleTimeoutMinutes, isLocked, recordActivity, totalTimeoutMs, warningThresholdMs]);
 
   // Handle Unlock
-  const handleUnlock = (e: React.FormEvent) => {
+  const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
     setUnlockError(null);
     setIsUnlocking(true);
 
-    const auth = authenticateStaffCredentials(adminEmail, unlockPassword);
-    if (!auth.success) {
-      setUnlockError(auth.error || 'Incorrect password. Unlock failed.');
+    try {
+      const auth = await authenticateStaffCredentialsAsync(adminEmail, unlockPassword);
+      if (!auth.success) {
+        setUnlockError(auth.error || 'Incorrect password. Unlock failed.');
+        setIsUnlocking(false);
+        return;
+      }
+
+      await logSecurityEvent(
+        adminEmail,
+        'SESSION_UNLOCKED',
+        `Console unlocked successfully by ${adminEmail}.`,
+        'info'
+      );
+
+      setIsLocked(false);
+      setShowWarning(false);
+      setUnlockPassword('');
+      lastActivityRef.current = Date.now();
+    } catch {
+      setUnlockError('Authentication service unreachable. Unlock failed.');
+    } finally {
       setIsUnlocking(false);
-      return;
     }
-
-    logSecurityEvent(
-      adminEmail,
-      'SESSION_UNLOCKED',
-      `Console unlocked successfully by ${adminEmail}.`,
-      'info'
-    );
-
-    setIsLocked(false);
-    setShowWarning(false);
-    setUnlockPassword('');
-    lastActivityRef.current = Date.now();
-    setIsUnlocking(false);
   };
 
   return (

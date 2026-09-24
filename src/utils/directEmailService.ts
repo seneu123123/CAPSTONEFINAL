@@ -73,6 +73,60 @@ export async function sendEmailNotification(payload: EmailPayload): Promise<Send
   }
   dispatchedEmailLockCache.set(lockKey, now);
 
+  // 0. If Resend API key is configured in environment
+  const RESEND_API_KEY = (import.meta as any).env?.VITE_RESEND_API_KEY;
+  if (RESEND_API_KEY) {
+    try {
+      const resendRes = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${RESEND_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: 'Holiday Travelers <onboarding@resend.dev>',
+          to: [normEmail],
+          subject: payload.subject,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #070b0e; color: #f4f1ea; padding: 24px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
+              <div style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; margin-bottom: 16px;">
+                <h2 style="color: #e86a33; font-size: 20px; margin: 0;">Holiday Travelers Travel & Tours</h2>
+                <p style="color: #a3a8b0; font-size: 12px; margin: 4px 0 0 0;">Official Password Reset & Verification Notice</p>
+              </div>
+              <p style="font-size: 14px; color: #f4f1ea;">Hello,</p>
+              <p style="font-size: 14px; color: #a3a8b0;">${payload.body}</p>
+              ${payload.otpCode ? `
+                <div style="background: rgba(232, 106, 51, 0.1); border: 1px solid rgba(232, 106, 51, 0.3); padding: 16px; text-align: center; border-radius: 12px; margin: 20px 0;">
+                  <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #e86a33; margin-bottom: 6px;">Your 6-Digit Password Reset Code</div>
+                  <span style="font-size: 32px; font-family: monospace; letter-spacing: 8px; color: #ffffff; font-weight: bold;">${payload.otpCode}</span>
+                  <p style="font-size: 11px; color: #a3a8b0; margin-top: 8px;">Valid for 10 minutes. Do not share this code with anyone.</p>
+                </div>
+              ` : ''}
+              <p style="font-size: 12px; color: #a3a8b0; margin-top: 24px;">If you did not request this email, please ignore this message.</p>
+              <div style="border-top: 1px solid rgba(255,255,255,0.1); pt: 12px; font-size: 10px; color: rgba(255,255,255,0.4);">
+                Holiday Travelers Inc. • Pasig City, Metro Manila • support@holidaytravelers.ph
+              </div>
+            </div>
+          `
+        })
+      });
+
+      if (resendRes.ok) {
+        console.log(`[Resend API] Successfully dispatched email to ${normEmail}`);
+        return {
+          success: true,
+          provider: 'webhook',
+          message: `Email successfully delivered to ${normEmail} via Resend API.`
+        };
+      } else {
+        const errJson = await resendRes.json().catch(() => ({}));
+        console.warn(`[Resend API Error]: ${resendRes.status}`, errJson);
+      }
+    } catch (err) {
+      console.warn('[Resend API Exception]:', err);
+    }
+  }
+
   // 1. If EmailJS Public Key is set in environment or dashboard
   if (EMAILJS_PUBLIC_KEY && EMAILJS_SERVICE_ID && selectedTemplateId) {
     try {

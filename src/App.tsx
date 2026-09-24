@@ -138,6 +138,12 @@ export default function App() {
   const [isPromoModalOpen, setIsPromoModalOpen] = useState<boolean>(false);
   const [activePromoCode, setActivePromoCode] = useState<string | undefined>(undefined);
   const [isMyAccountModalOpen, setIsMyAccountModalOpen] = useState<boolean>(false);
+  const [myAccountInitialTab, setMyAccountInitialTab] = useState<'overview' | 'profile' | 'password' | 'theme' | 'vouchers' | 'privacy'>('overview');
+
+  const handleOpenMyAccountModal = (tab: 'overview' | 'profile' | 'password' | 'theme' | 'vouchers' | 'privacy' = 'overview') => {
+    setMyAccountInitialTab(tab);
+    setIsMyAccountModalOpen(true);
+  };
 
   // Traveler Supabase Auth State
   const [travelerUser, setTravelerUser] = useState<UserProfile | null>(() => {
@@ -306,10 +312,20 @@ export default function App() {
       }
     }).catch((err) => console.warn('Supabase initial bookings fetch notice:', err));
 
-    // Subscribe to auth state changes (e.g. returning from Google OAuth popup/redirect)
+    // Subscribe to auth state changes (e.g. returning from Google OAuth popup/redirect or Resend password recovery)
     const supabase = getSupabase();
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
+
+      if (event === 'PASSWORD_RECOVERY' || window.location.hash.includes('type=recovery')) {
+        setIsMyAccountModalOpen(true);
+        setMyAccountInitialTab('password');
+        dispatchAppNotification({
+          title: 'Password Recovery Session Active',
+          message: 'Your identity has been verified via the recovery link from Resend. Please set your new password below.',
+          type: 'info'
+        });
+      }
 
       if (session?.user) {
         // If current active session is a guest, do not let stale background token restoration overwrite the guest
@@ -898,7 +914,7 @@ export default function App() {
               setIsTravelerAuthModalOpen(true);
             }}
             onSignOutTraveler={handlePromptSignOutTraveler}
-            onOpenMyAccount={() => setIsMyAccountModalOpen(true)}
+            onOpenMyAccount={(tab) => handleOpenMyAccountModal(tab || 'overview')}
           />
 
           <main className="flex-1 w-full" id="main-content">
@@ -930,7 +946,7 @@ export default function App() {
               promoCode={activePromoCode || (appSettings.promo?.enabled ? appSettings.promo.discountCode : undefined)}
               promoDiscountPct={appSettings.promo?.discountPct || 8}
               currentUser={travelerUser}
-              onOpenMyAccount={() => setIsMyAccountModalOpen(true)}
+              onOpenMyAccount={() => handleOpenMyAccountModal('overview')}
               initialSearchCriteria={pendingSearchCriteria}
               onRequireAuth={() => {
                 setWasBookingRequestedBeforeAuth(true);
@@ -1130,6 +1146,7 @@ export default function App() {
       <MyAccountModal
         isOpen={isMyAccountModalOpen}
         onClose={() => setIsMyAccountModalOpen(false)}
+        initialTab={myAccountInitialTab}
         travelerUser={travelerUser}
         userBookings={customerVisibleBookings}
         onUpdateProfile={(updatedProfile) => setTravelerUser(updatedProfile)}
