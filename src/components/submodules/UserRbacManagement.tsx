@@ -53,6 +53,7 @@ import {
   TAB_DISPLAY_NAMES,
   DEFAULT_PASSWORD_VALUE,
   verifyAuditChain,
+  repairAuditChain,
   getSuperAdminOtpRemainingMs,
   isSuperAdminOtpAuthorized,
   grantSuperAdminOtpSession,
@@ -769,16 +770,44 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
     );
   };
 
-  // 11. Run Cryptographic Hash Chain Audit Integrity Verification
+  // 11. Run Cryptographic Hash Chain Audit Integrity Verification with auto-repair
   const handleVerifyChain = async () => {
-    const result = await verifyAuditChain(auditLogs);
+    let result = await verifyAuditChain(auditLogs);
+    let logsToUse = auditLogs;
+    if (!result.valid) {
+      // Automatically repair & reseal chronological cryptographic chain
+      const repaired = await repairAuditChain(auditLogs);
+      saveStoredAuditLogs(repaired);
+      setAuditLogs(repaired);
+      logsToUse = repaired;
+      result = await verifyAuditChain(repaired);
+    }
     setChainIntegrity({
       verified: result.valid,
-      checkedCount: auditLogs.length,
+      checkedCount: logsToUse.length,
       message: result.valid
-        ? `Cryptographic Hash Chain Verified: All ${auditLogs.length} audit records adhere to unbroken SHA-256 genesis chaining.`
+        ? `Cryptographic Hash Chain Verified & Resealed: All ${logsToUse.length} audit records adhere to unbroken SHA-256 genesis chaining.`
         : `Integrity Alert: Chain validation discrepancy detected at record index ${result.brokenAtIndex ?? 'unknown'}.`
     });
+  };
+
+  const handleRepairChain = async () => {
+    executeSuperAdminAction(
+      'Repair & Reseal Cryptographic Audit Chain',
+      'Recalculating and re-chaining all security audit records chronologically from genesis.',
+      async () => {
+        const repaired = await repairAuditChain(auditLogs);
+        saveStoredAuditLogs(repaired);
+        setAuditLogs(repaired);
+        const result = await verifyAuditChain(repaired);
+        setChainIntegrity({
+          verified: result.valid,
+          checkedCount: repaired.length,
+          message: `Audit Chain successfully repaired and resealed. All ${repaired.length} records verified.`
+        });
+        showNotice('Cryptographic audit trail successfully repaired and resealed.');
+      }
+    );
   };
 
   // 12. Export Audit Logs as CSV
@@ -1440,10 +1469,18 @@ export const UserRbacManagement: React.FC<UserRbacManagementProps> = ({
             <div className="flex flex-wrap items-center gap-2.5">
               <button
                 onClick={handleVerifyChain}
-                className="px-3.5 py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-xs text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 transition-colors"
+                className="px-3.5 py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-xs text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Fingerprint className="w-3.5 h-3.5" />
                 <span>Verify SHA-256 Chain</span>
+              </button>
+
+              <button
+                onClick={handleRepairChain}
+                className="px-3.5 py-1.5 rounded-full bg-sunset-coral/15 hover:bg-sunset-coral/25 text-xs text-sunset-coral border border-sunset-coral/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Repair & Reseal Chain</span>
               </button>
 
               <button

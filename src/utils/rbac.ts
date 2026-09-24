@@ -10,6 +10,7 @@ import {
   generateBackupCodes, 
   calculateAuditHash, 
   verifyAuditChain,
+  repairAuditChain,
   generateSalt,
   hashPassword,
   verifyPassword
@@ -800,7 +801,7 @@ export async function syncGenesisAuditsToDb(): Promise<void> {
   }
 }
 
-export { verifyAuditChain };
+export { verifyAuditChain, repairAuditChain };
 
 // ============================================================================
 // SUPER ADMIN RBAC 2-MINUTE OTP ACTION AUTHORIZATION LEASE (STEP-UP CHALLENGE)
